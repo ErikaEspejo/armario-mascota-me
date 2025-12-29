@@ -1,0 +1,172 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"armario-mascota-me/db"
+	"armario-mascota-me/models"
+)
+
+// DesignAssetRepository handles database operations for design assets
+// Implements DesignAssetRepositoryInterface
+type DesignAssetRepository struct{}
+
+// NewDesignAssetRepository creates a new DesignAssetRepository
+func NewDesignAssetRepository() *DesignAssetRepository {
+	return &DesignAssetRepository{}
+}
+
+// Ensure DesignAssetRepository implements DesignAssetRepositoryInterface
+var _ DesignAssetRepositoryInterface = (*DesignAssetRepository)(nil)
+
+// ExistsByDriveFileID checks if a design asset exists by drive_file_id
+func (r *DesignAssetRepository) ExistsByDriveFileID(ctx context.Context, driveFileID string) (bool, error) {
+	log.Printf("🔍 Checking if drive_file_id exists in database: %s", driveFileID)
+
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM design_assets WHERE drive_file_id = $1)`
+	err := db.DB.QueryRowContext(ctx, query, driveFileID).Scan(&exists)
+	if err != nil {
+		log.Printf("❌ Error checking existence for drive_file_id %s: %v", driveFileID, err)
+		return false, fmt.Errorf("failed to check existence: %w", err)
+	}
+
+	log.Printf("🔍 Existence check result for drive_file_id %s: exists=%v", driveFileID, exists)
+	return exists, nil
+}
+
+// Insert inserts a new design asset into the database
+func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.DesignAssetDB) error {
+	log.Printf("💾 Repository.Insert called for code: %s, drive_file_id: %s", asset.Code, asset.DriveFileID)
+
+	query := `
+		INSERT INTO design_assets (
+			code, description, drive_file_id, image_url,
+			color_primary, color_secondary, hoodie_type, image_type,
+			deco_id, deco_base, created_at, is_active, has_highlights
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		ON CONFLICT (drive_file_id) DO NOTHING
+	`
+
+	log.Printf("💾 Executing INSERT query for drive_file_id: %s", asset.DriveFileID)
+
+	// Parse createdTime from Google Drive format to time.Time
+	var createdAt time.Time
+	if asset.CreatedAt != "" {
+		parsed, err := time.Parse(time.RFC3339, asset.CreatedAt)
+		if err != nil {
+			// If parsing fails, use current time
+			createdAt = time.Now()
+		} else {
+			createdAt = parsed
+		}
+	} else {
+		createdAt = time.Now()
+	}
+
+	result, err := db.DB.ExecContext(ctx, query,
+		asset.Code,
+		asset.Description,
+		asset.DriveFileID,
+		asset.ImageURL,
+		asset.ColorPrimary,
+		asset.ColorSecondary,
+		asset.HoodieType,
+		asset.ImageType,
+		asset.DecoID,
+		asset.DecoBase,
+		createdAt,
+		asset.IsActive,
+		asset.HasHiglights,
+	)
+
+	if err != nil {
+		log.Printf("❌ Database INSERT error for drive_file_id %s: %v", asset.DriveFileID, err)
+		return fmt.Errorf("failed to insert design asset: %w", err)
+	}
+
+	log.Printf("💾 INSERT query executed successfully for drive_file_id: %s", asset.DriveFileID)
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("⚠️  Warning: Could not get rows affected: %v", err)
+	}
+
+	if rowsAffected > 0 {
+		log.Printf("💾 Database: Successfully inserted design asset (code_base: %s, drive_file_id: %s)", asset.Code, asset.DriveFileID)
+	} else {
+		log.Printf("⚠️  Database: No rows inserted (likely due to ON CONFLICT) for drive_file_id: %s", asset.DriveFileID)
+	}
+
+	return nil
+}
+
+// GetByCode retrieves a design asset by its code
+func (r *DesignAssetRepository) GetByCode(ctx context.Context, code string) (*models.DesignAssetDetail, error) {
+	log.Printf("🔍 Fetching design asset by code: %s", code)
+
+	query := `
+		SELECT code, description, drive_file_id, image_url,
+		       color_primary, color_secondary, hoodie_type, image_type,
+		       deco_id, deco_base, is_active, has_highlights
+		FROM design_assets
+		WHERE code = $1
+	`
+
+	var asset models.DesignAssetDetail
+	err := db.DB.QueryRowContext(ctx, query, code).Scan(
+		&asset.Code,
+		&asset.Description,
+		&asset.DriveFileID,
+		&asset.ImageURL,
+		&asset.ColorPrimary,
+		&asset.ColorSecondary,
+		&asset.HoodieType,
+		&asset.ImageType,
+		&asset.DecoID,
+		&asset.DecoBase,
+		&asset.IsActive,
+		&asset.HasHighlights,
+	)
+
+	if err != nil {
+		log.Printf("❌ Error fetching design asset by code %s: %v", code, err)
+		return nil, fmt.Errorf("failed to get design asset: %w", err)
+	}
+
+	log.Printf("✓ Successfully fetched design asset: %s", code)
+	return &asset, nil
+}
+
+// UpdateDescriptionAndHighlights updates the description and has_highlights fields of a design asset
+func (r *DesignAssetRepository) UpdateDescriptionAndHighlights(ctx context.Context, code string, description string, hasHighlights bool) error {
+	log.Printf("🔄 Updating design asset: code=%s, description=%s, hasHighlights=%v", code, description, hasHighlights)
+
+	query := `
+		UPDATE design_assets
+		SET description = $1, has_highlights = $2
+		WHERE code = $3
+	`
+
+	result, err := db.DB.ExecContext(ctx, query, description, hasHighlights, code)
+	if err != nil {
+		log.Printf("❌ Error updating design asset %s: %v", code, err)
+		return fmt.Errorf("failed to update design asset: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("⚠️  Warning: Could not get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		log.Printf("⚠️  No rows updated for code: %s (record may not exist)", code)
+		return fmt.Errorf("design asset with code %s not found", code)
+	}
+
+	log.Printf("✅ Successfully updated design asset: code=%s (rows affected: %d)", code, rowsAffected)
+	return nil
+}

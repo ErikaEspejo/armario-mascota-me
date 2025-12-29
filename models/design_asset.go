@@ -5,6 +5,8 @@ type DesignAsset struct {
 	DriveFileID    string `json:"driveFileId"`
 	FileName       string `json:"fileName"`
 	ImageURL       string `json:"imageUrl"`
+	CreatedTime    string `json:"createdTime"`
+	ModifiedTime   string `json:"modifiedTime"`
 	ColorPrimary   string `json:"colorPrimary"`
 	ColorSecondary string `json:"colorSecondary"`
 	BusoType       string `json:"busoType"`
@@ -12,5 +14,6 @@ type DesignAsset struct {
 	DecoID         string `json:"decoId"`
 	DecoBase       string `json:"decoBase"`
 }
+
 
 

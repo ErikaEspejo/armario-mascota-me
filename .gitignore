@@ -7,3 +7,6 @@ secrets/
 # Bash scripts
 *.sh
 
+# Environment variables
+.env
+

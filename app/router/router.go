@@ -26,5 +26,17 @@ func SetupRoutes(controllers *Controllers) {
 	http.HandleFunc("/ping", pingHandler)
 
 	// Design assets routes
-	http.HandleFunc("/admin/design-assets/sync", controllers.DesignAsset.SyncDesignAssets)
+	http.HandleFunc("/admin/design-assets/load", controllers.DesignAsset.LoadImages)
+
+	// Design asset by code - handles both GET (get) and PUT (update)
+	http.HandleFunc("/admin/design-assets/", func(w http.ResponseWriter, r *http.Request) {
+		// Route to appropriate handler based on HTTP method
+		if r.Method == http.MethodGet {
+			controllers.DesignAsset.GetDesignAssetByCode(w, r)
+		} else if r.Method == http.MethodPut {
+			controllers.DesignAsset.UpdateDesignAsset(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 }
