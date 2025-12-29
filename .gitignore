@@ -1,0 +1,9 @@
+# Secrets directory
+secrets/
+
+# PowerShell scripts
+*.ps1
+
+# Bash scripts
+*.sh
+
