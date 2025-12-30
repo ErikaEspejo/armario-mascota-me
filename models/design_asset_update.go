@@ -22,3 +22,4 @@ type DesignAssetDetail struct {
 	HasHighlights  bool   `json:"hasHighlights"`
 }
 
+

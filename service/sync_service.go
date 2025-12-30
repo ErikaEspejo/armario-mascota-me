@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"path/filepath"
-	"strings"
 
 	"armario-mascota-me/models"
 	"armario-mascota-me/repository"
@@ -50,57 +48,36 @@ func (s *SyncService) SyncDesignAssets(ctx context.Context, folderID string) ([]
 		// Check if asset already exists
 		exists, err := s.repository.ExistsByDriveFileID(ctx, asset.DriveFileID)
 		if err != nil {
-			log.Printf("❌ Error checking existence for %s (drive_file_id: %s): %v", asset.FileName, asset.DriveFileID, err)
+			log.Printf("❌ Error checking existence for drive_file_id: %s: %v", asset.DriveFileID, err)
 			continue
 		}
 
 		if exists {
-			log.Printf("⏭️  Skipping %s (drive_file_id: %s already exists in database)", asset.FileName, asset.DriveFileID)
+			log.Printf("⏭️  Skipping drive_file_id: %s (already exists in database)", asset.DriveFileID)
 			skipped++
 			continue
 		}
 
-		log.Printf("🆕 New file detected: %s (drive_file_id: %s)", asset.FileName, asset.DriveFileID)
+		log.Printf("🆕 New file detected (drive_file_id: %s)", asset.DriveFileID)
 
-		// Build code_base from filename (without extension)
-		codeBase := s.buildCodeBase(asset.FileName)
-
-		// Convert to database model
+		// Convert to database model - only drive_file_id and image_url
 		dbAsset := &models.DesignAssetDB{
-			Code:           codeBase,
-			Description:    "", // Empty by default, can be set later
-			DriveFileID:    asset.DriveFileID,
-			ImageURL:       asset.ImageURL,
-			ColorPrimary:   asset.ColorPrimary,
-			ColorSecondary: asset.ColorSecondary,
-			HoodieType:     asset.BusoType,
-			ImageType:      asset.ImageType, // ImageType maps to deco_type
-			DecoID:         asset.DecoID,
-			DecoBase:       asset.DecoBase,
-			CreatedAt:      asset.CreatedTime,
-			IsActive:       true,
-			HasHiglights:   false,
+			DriveFileID: asset.DriveFileID,
+			ImageURL:    asset.ImageURL,
+			// All other fields will be set from the frontend interface
 		}
 
 		// Insert into database
-		log.Printf("💾 Attempting to insert into database: %s (code_base: %s)", asset.FileName, codeBase)
+		log.Printf("💾 Attempting to insert into database (drive_file_id: %s)", asset.DriveFileID)
 		if err := s.repository.Insert(ctx, dbAsset); err != nil {
-			log.Printf("❌ Error inserting %s into database: %v", asset.FileName, err)
+			log.Printf("❌ Error inserting drive_file_id %s into database: %v", asset.DriveFileID, err)
 			continue
 		}
 
-		log.Printf("✅ Successfully processed: %s (code_base: %s, drive_file_id: %s)", asset.FileName, codeBase, asset.DriveFileID)
+		log.Printf("✅ Successfully processed (drive_file_id: %s)", asset.DriveFileID)
 		inserted++
 	}
 
 	log.Printf("🎉 Synchronization completed successfully: %d inserted, %d skipped, %d total processed", inserted, skipped, len(driveAssets))
 	return driveAssets, nil
-}
-
-// buildCodeBase constructs the code_base from filename (without extension)
-func (s *SyncService) buildCodeBase(filename string) string {
-	// Remove extension
-	ext := filepath.Ext(filename)
-	codeBase := strings.TrimSuffix(filename, ext)
-	return codeBase
 }

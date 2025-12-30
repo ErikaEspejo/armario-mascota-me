@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"time"
@@ -38,49 +39,64 @@ func (r *DesignAssetRepository) ExistsByDriveFileID(ctx context.Context, driveFi
 	return exists, nil
 }
 
+// GetMaxDecoID returns the maximum deco_id value in the database
+// deco_id is stored as text, so we need to cast it to integer for MAX comparison
+func (r *DesignAssetRepository) GetMaxDecoID(ctx context.Context) (int, error) {
+	var maxDecoID sql.NullInt64
+	// Cast deco_id to integer for MAX comparison, then convert back
+	query := `SELECT MAX(CAST(deco_id AS INTEGER)) FROM design_assets WHERE deco_id IS NOT NULL AND deco_id ~ '^[0-9]+$'`
+	
+	err := db.DB.QueryRowContext(ctx, query).Scan(&maxDecoID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get max deco_id: %w", err)
+	}
+
+	if !maxDecoID.Valid {
+		// No records exist, start from 1
+		return 0, nil
+	}
+
+	return int(maxDecoID.Int64), nil
+}
+
 // Insert inserts a new design asset into the database
+// Only inserts drive_file_id, image_url, and deco_id (ascending number), other fields will be set from the frontend
 func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.DesignAssetDB) error {
-	log.Printf("💾 Repository.Insert called for code: %s, drive_file_id: %s", asset.Code, asset.DriveFileID)
+	log.Printf("💾 Repository.Insert called for drive_file_id: %s", asset.DriveFileID)
+
+	// Get the next deco_id (max + 1)
+	maxDecoID, err := r.GetMaxDecoID(ctx)
+	if err != nil {
+		log.Printf("❌ Error getting max deco_id: %v", err)
+		return fmt.Errorf("failed to get max deco_id: %w", err)
+	}
+
+	nextDecoID := maxDecoID + 1
+	nextDecoIDStr := fmt.Sprintf("%d", nextDecoID)
+	log.Printf("🔢 Next deco_id will be: %s", nextDecoIDStr)
 
 	query := `
 		INSERT INTO design_assets (
-			code, description, drive_file_id, image_url,
-			color_primary, color_secondary, hoodie_type, image_type,
-			deco_id, deco_base, created_at, is_active, has_highlights
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			code, drive_file_id, image_url, deco_id, created_at, is_active
+		) VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (drive_file_id) DO NOTHING
 	`
 
 	log.Printf("💾 Executing INSERT query for drive_file_id: %s", asset.DriveFileID)
 
-	// Parse createdTime from Google Drive format to time.Time
-	var createdAt time.Time
-	if asset.CreatedAt != "" {
-		parsed, err := time.Parse(time.RFC3339, asset.CreatedAt)
-		if err != nil {
-			// If parsing fails, use current time
-			createdAt = time.Now()
-		} else {
-			createdAt = parsed
-		}
-	} else {
-		createdAt = time.Now()
-	}
+	// Use drive_file_id as code (since we're not parsing filename anymore)
+	code := asset.DriveFileID
+
+	// Use current time for created_at
+	createdAt := time.Now()
 
 	result, err := db.DB.ExecContext(ctx, query,
-		asset.Code,
-		asset.Description,
+		code,                    // Use drive_file_id as code
 		asset.DriveFileID,
 		asset.ImageURL,
-		asset.ColorPrimary,
-		asset.ColorSecondary,
-		asset.HoodieType,
-		asset.ImageType,
-		asset.DecoID,
-		asset.DecoBase,
+		nextDecoIDStr, // Convert to string since deco_id is text in database
 		createdAt,
-		asset.IsActive,
-		asset.HasHiglights,
+		true, // is_active defaults to true
 	)
 
 	if err != nil {
@@ -96,7 +112,7 @@ func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.Design
 	}
 
 	if rowsAffected > 0 {
-		log.Printf("💾 Database: Successfully inserted design asset (code_base: %s, drive_file_id: %s)", asset.Code, asset.DriveFileID)
+		log.Printf("💾 Database: Successfully inserted design asset (drive_file_id: %s, deco_id: %s)", asset.DriveFileID, nextDecoIDStr)
 	} else {
 		log.Printf("⚠️  Database: No rows inserted (likely due to ON CONFLICT) for drive_file_id: %s", asset.DriveFileID)
 	}

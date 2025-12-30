@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"armario-mascota-me/app/controller"
 	"armario-mascota-me/app/router"
@@ -20,8 +21,24 @@ func Initialize() error {
 
 	// Get credentials path from environment variable
 	credentialsPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+	fmt.Printf("DEBUG: GOOGLE_APPLICATION_CREDENTIALS from env: %s\n", credentialsPath)
+	
 	if credentialsPath == "" {
 		return fmt.Errorf("GOOGLE_APPLICATION_CREDENTIALS environment variable is not set")
+	}
+
+	// Resolve relative paths to absolute paths
+	// If the path is relative, resolve it from the current working directory
+	if !filepath.IsAbs(credentialsPath) {
+		wd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+		fmt.Printf("DEBUG: Current working directory: %s\n", wd)
+		credentialsPath = filepath.Join(wd, credentialsPath)
+		// Normalize path separators for Windows
+		credentialsPath = filepath.Clean(credentialsPath)
+		fmt.Printf("DEBUG: Resolved credentials path: %s\n", credentialsPath)
 	}
 
 	// Initialize Drive service

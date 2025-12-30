@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"armario-mascota-me/models"
-	"armario-mascota-me/utils"
 
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
@@ -76,9 +75,9 @@ func (ds *DriveService) ListDesignAssets(folderID string) ([]models.DesignAsset,
 		}
 	}
 
-	log.Printf("✓ Retrieved %d total files from Google Drive (fetched in %d pages)", len(allFiles), pageCount)
+	log.Printf("✓ Retrieved %d total files from Google Drive (fetched in %d pages)", len(allFiles))
 
-	// Filter images and parse
+	// Filter images and build simple assets
 	var designAssets []models.DesignAsset
 	imageMimeTypes := map[string]bool{
 		"image/png":  true,
@@ -92,26 +91,18 @@ func (ds *DriveService) ListDesignAssets(folderID string) ([]models.DesignAsset,
 			continue
 		}
 
-		// Parse filename
-		parsed, err := utils.ParseFileName(file.Name)
-		if err != nil {
-			log.Printf("warning: failed to parse filename %s: %v", file.Name, err)
-			continue // Skip files that don't match the pattern
-		}
-
 		// Build public URL
 		imageURL := fmt.Sprintf("https://drive.google.com/uc?id=%s", file.Id)
 
-		// Set Drive-specific fields
-		parsed.DriveFileID = file.Id
-		parsed.FileName = file.Name
-		parsed.ImageURL = imageURL
-		parsed.CreatedTime = file.CreatedTime
-		parsed.ModifiedTime = file.ModifiedTime
+		// Create simple asset with only drive_file_id and image_url
+		asset := models.DesignAsset{
+			DriveFileID: file.Id,
+			ImageURL:    imageURL,
+		}
 
-		designAssets = append(designAssets, *parsed)
+		designAssets = append(designAssets, asset)
 	}
 
-	log.Printf("✓ Successfully parsed %d image files from Google Drive", len(designAssets))
+	log.Printf("✓ Successfully processed %d image files from Google Drive", len(designAssets))
 	return designAssets, nil
 }

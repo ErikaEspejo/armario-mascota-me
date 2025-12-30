@@ -69,3 +69,4 @@ armario-mascota-me/
 └── utils/              # Utility functions
 ```
 
+

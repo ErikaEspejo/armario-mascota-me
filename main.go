@@ -24,12 +24,16 @@ func main() {
 		}
 		
 		// Try to load .env from current directory
+		// Use Overload to ensure .env values override system environment variables
 		envPath := ".env"
-		if err := godotenv.Load(envPath); err != nil {
+		if err := godotenv.Overload(envPath); err != nil {
 			log.Printf("Warning: .env file not found at %s, using system environment variables", envPath)
 			log.Printf("Error details: %v", err)
 		} else {
-			log.Printf("Successfully loaded environment variables from %s", envPath)
+			log.Printf("Successfully loaded environment variables from %s (overriding system variables)", envPath)
+			// Debug: Show what was loaded
+			credsPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+			log.Printf("DEBUG: GOOGLE_APPLICATION_CREDENTIALS after loading .env: %s", credsPath)
 		}
 	}
 

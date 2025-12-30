@@ -16,3 +16,4 @@ type DesignAssetDB struct {
 	IsActive       bool
 	HasHiglights   bool
 }
+
