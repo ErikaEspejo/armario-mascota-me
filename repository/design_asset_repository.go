@@ -77,8 +77,8 @@ func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.Design
 
 	query := `
 		INSERT INTO design_assets (
-			code, drive_file_id, image_url, deco_id, created_at, is_active
-		) VALUES ($1, $2, $3, $4, $5, $6)
+			code, drive_file_id, image_url, deco_id, status, created_at, is_active
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (drive_file_id) DO NOTHING
 	`
 
@@ -90,11 +90,15 @@ func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.Design
 	// Use current time for created_at
 	createdAt := time.Now()
 
+	// Status is always 'pending' when loading images
+	status := "pending"
+
 	result, err := db.DB.ExecContext(ctx, query,
 		code,                    // Use drive_file_id as code
 		asset.DriveFileID,
 		asset.ImageURL,
 		nextDecoIDStr, // Convert to string since deco_id is text in database
+		status,        // Always 'pending' when loading images
 		createdAt,
 		true, // is_active defaults to true
 	)
