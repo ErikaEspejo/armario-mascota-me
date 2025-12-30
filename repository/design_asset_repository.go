@@ -129,15 +129,25 @@ func (r *DesignAssetRepository) GetByCode(ctx context.Context, code string) (*mo
 	log.Printf("🔍 Fetching design asset by code: %s", code)
 
 	query := `
-		SELECT code, description, drive_file_id, image_url,
-		       color_primary, color_secondary, hoodie_type, image_type,
-		       deco_id, deco_base, is_active, has_highlights
+		SELECT id, code, 
+		       COALESCE(description, '') as description, 
+		       drive_file_id, 
+		       image_url,
+		       COALESCE(color_primary, '') as color_primary, 
+		       COALESCE(color_secondary, '') as color_secondary, 
+		       COALESCE(hoodie_type, '') as hoodie_type, 
+		       COALESCE(image_type, '') as image_type,
+		       COALESCE(deco_id, '') as deco_id, 
+		       COALESCE(deco_base, '') as deco_base, 
+		       is_active, 
+		       has_highlights
 		FROM design_assets
 		WHERE code = $1
 	`
 
 	var asset models.DesignAssetDetail
 	err := db.DB.QueryRowContext(ctx, query, code).Scan(
+		&asset.ID,
 		&asset.Code,
 		&asset.Description,
 		&asset.DriveFileID,
@@ -196,7 +206,7 @@ func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.Design
 	log.Printf("🔍 Fetching all design assets with status = 'pending'")
 
 	query := `
-		SELECT code, 
+		SELECT id, code, 
 		       COALESCE(description, '') as description, 
 		       drive_file_id, 
 		       image_url,
@@ -224,6 +234,7 @@ func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.Design
 	for rows.Next() {
 		var asset models.DesignAssetDetail
 		err := rows.Scan(
+			&asset.ID,
 			&asset.Code,
 			&asset.Description,
 			&asset.DriveFileID,
@@ -251,4 +262,51 @@ func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.Design
 
 	log.Printf("✓ Successfully fetched %d pending design assets", len(assets))
 	return assets, nil
+}
+
+// GetByID retrieves a design asset by its ID
+func (r *DesignAssetRepository) GetByID(ctx context.Context, id int) (*models.DesignAssetDetail, error) {
+	log.Printf("🔍 Fetching design asset by ID: %d", id)
+
+	query := `
+		SELECT id, code, 
+		       COALESCE(description, '') as description, 
+		       drive_file_id, 
+		       image_url,
+		       COALESCE(color_primary, '') as color_primary, 
+		       COALESCE(color_secondary, '') as color_secondary, 
+		       COALESCE(hoodie_type, '') as hoodie_type, 
+		       COALESCE(image_type, '') as image_type,
+		       COALESCE(deco_id, '') as deco_id, 
+		       COALESCE(deco_base, '') as deco_base, 
+		       is_active, 
+		       has_highlights
+		FROM design_assets
+		WHERE id = $1
+	`
+
+	var asset models.DesignAssetDetail
+	err := db.DB.QueryRowContext(ctx, query, id).Scan(
+		&asset.ID,
+		&asset.Code,
+		&asset.Description,
+		&asset.DriveFileID,
+		&asset.ImageURL,
+		&asset.ColorPrimary,
+		&asset.ColorSecondary,
+		&asset.HoodieType,
+		&asset.ImageType,
+		&asset.DecoID,
+		&asset.DecoBase,
+		&asset.IsActive,
+		&asset.HasHighlights,
+	)
+
+	if err != nil {
+		log.Printf("❌ Error fetching design asset by ID %d: %v", id, err)
+		return nil, fmt.Errorf("failed to get design asset: %w", err)
+	}
+
+	log.Printf("✓ Successfully fetched design asset: ID=%d", id)
+	return &asset, nil
 }

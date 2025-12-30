@@ -10,3 +10,6 @@ secrets/
 # Environment variables
 .env
 
+# Cache directory
+cache/
+

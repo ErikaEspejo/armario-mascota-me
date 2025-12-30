@@ -55,7 +55,7 @@ func Initialize() error {
 
 	// Create controllers
 	controllers := &router.Controllers{
-		DesignAsset: controller.NewDesignAssetController(syncService, designAssetRepo),
+		DesignAsset: controller.NewDesignAssetController(syncService, designAssetRepo, driveService),
 	}
 
 	// Setup routes using standard http router

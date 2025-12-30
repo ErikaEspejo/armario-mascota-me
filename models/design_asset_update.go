@@ -8,6 +8,7 @@ type DesignAssetUpdateRequest struct {
 
 // DesignAssetDetail represents a design asset with all details for editing
 type DesignAssetDetail struct {
+	ID             int    `json:"id"`
 	Code           string `json:"code"`
 	Description    string `json:"description"`
 	DriveFileID    string `json:"driveFileId"`
@@ -20,6 +21,12 @@ type DesignAssetDetail struct {
 	DecoBase       string `json:"decoBase"`
 	IsActive       bool   `json:"isActive"`
 	HasHighlights  bool   `json:"hasHighlights"`
+}
+
+// DesignAssetDetailWithOptimizedURL extends DesignAssetDetail with optimized image URL
+type DesignAssetDetailWithOptimizedURL struct {
+	DesignAssetDetail
+	OptimizedImageUrl string `json:"optimizedImageUrl"`
 }
 
 

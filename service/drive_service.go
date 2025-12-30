@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"strings"
 
@@ -105,4 +106,26 @@ func (ds *DriveService) ListDesignAssets(folderID string) ([]models.DesignAsset,
 
 	log.Printf("✓ Successfully processed %d image files from Google Drive", len(designAssets))
 	return designAssets, nil
+}
+
+// DownloadImage downloads an image file from Google Drive by file ID
+func (ds *DriveService) DownloadImage(fileID string) ([]byte, error) {
+	log.Printf("📥 Downloading image from Google Drive: fileID=%s", fileID)
+
+	resp, err := ds.client.Files.Get(fileID).Download()
+	if err != nil {
+		log.Printf("❌ Error downloading image from Drive (fileID: %s): %v", fileID, err)
+		return nil, fmt.Errorf("failed to download image from Drive: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read all bytes from response body
+	imageData, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("❌ Error reading image data (fileID: %s): %v", fileID, err)
+		return nil, fmt.Errorf("failed to read image data: %w", err)
+	}
+
+	log.Printf("✓ Successfully downloaded image from Drive: fileID=%s, size=%d bytes", fileID, len(imageData))
+	return imageData, nil
 }

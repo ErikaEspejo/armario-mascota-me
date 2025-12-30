@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"armario-mascota-me/models"
@@ -18,13 +20,15 @@ const folderID = "1TtK0fnadxl3r1-8iYlv2GFf5LgdKxmID"
 type DesignAssetController struct {
 	syncService service.SyncServiceInterface
 	repository  repository.DesignAssetRepositoryInterface
+	driveService service.DriveServiceInterface
 }
 
 // NewDesignAssetController creates a new DesignAssetController
-func NewDesignAssetController(syncService service.SyncServiceInterface, repo repository.DesignAssetRepositoryInterface) *DesignAssetController {
+func NewDesignAssetController(syncService service.SyncServiceInterface, repo repository.DesignAssetRepositoryInterface, driveService service.DriveServiceInterface) *DesignAssetController {
 	return &DesignAssetController{
 		syncService: syncService,
 		repository:  repo,
+		driveService: driveService,
 	}
 }
 
@@ -132,7 +136,7 @@ func (c *DesignAssetController) UpdateDesignAsset(w http.ResponseWriter, r *http
 }
 
 // GetPendingDesignAssets handles GET /admin/design-assets/pending
-// Returns all design assets with status = 'pending'
+// Returns all design assets with status = 'pending' (metadata only, no image processing)
 func (c *DesignAssetController) GetPendingDesignAssets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -148,10 +152,121 @@ func (c *DesignAssetController) GetPendingDesignAssets(w http.ResponseWriter, r 
 		return
 	}
 
+	// Build response with optimized image URLs (lazy processing - URLs only, no actual processing)
+	response := make([]models.DesignAssetDetailWithOptimizedURL, len(assets))
+	for i, asset := range assets {
+		// Construct URL to optimized image endpoint
+		optimizedURL := fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", asset.ID)
+		response[i] = models.DesignAssetDetailWithOptimizedURL{
+			DesignAssetDetail:  asset,
+			OptimizedImageUrl: optimizedURL,
+		}
+	}
+
 	// Set content type and return JSON
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(assets); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
+	}
+}
+
+// GetOptimizedImage handles GET /admin/design-assets/pending/:id/image?size=thumb|medium
+// Returns optimized image with lazy processing and cache
+func (c *DesignAssetController) GetOptimizedImage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract ID from URL path
+	// Path format: /admin/design-assets/pending/{id}/image
+	path := strings.TrimPrefix(r.URL.Path, "/admin/design-assets/pending/")
+	if path == "" {
+		http.Error(w, "id parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract ID from path (remove /image suffix)
+	idStr := strings.TrimSuffix(path, "/image")
+	if idStr == path {
+		http.Error(w, "invalid path format", http.StatusBadRequest)
+		return
+	}
+
+	var id int
+	var err error
+	if id, err = strconv.Atoi(idStr); err != nil {
+		http.Error(w, "invalid id parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Get size parameter (default: medium)
+	size := r.URL.Query().Get("size")
+	if size == "" {
+		size = "medium"
+	}
+	if size != "thumb" && size != "medium" {
+		size = "medium"
+	}
+
+	ctx := context.Background()
+
+	// Get design asset from database
+	asset, err := c.repository.GetByID(ctx, id)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get design asset: %v", err), http.StatusNotFound)
+		return
+	}
+
+	// Ensure cache directory exists
+	if err := service.EnsureCacheDir(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to ensure cache directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get cache path
+	cachePath := service.GetCachePath(id, size)
+
+	// Check if cached image exists
+	var imageData []byte
+	if service.CacheExists(cachePath) {
+		// Read from cache
+		imageData, err = service.ReadFromCache(cachePath)
+		if err != nil {
+			log.Printf("⚠️  Error reading from cache, will reprocess: %v", err)
+			// Fall through to processing
+			imageData = nil
+		}
+	}
+
+	// If not in cache or failed to read, process the image
+	if imageData == nil {
+		// Download image from Drive
+		originalData, err := c.driveService.DownloadImage(asset.DriveFileID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to download image from Drive: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Optimize image
+		imageData, err = service.OptimizeImage(originalData, size)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to optimize image: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Save to cache
+		if err := service.SaveToCache(cachePath, imageData); err != nil {
+			log.Printf("⚠️  Warning: Failed to save to cache: %v", err)
+			// Continue anyway, we still have the image data
+		}
+	}
+
+	// Return image
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(imageData); err != nil {
+		log.Printf("❌ Error writing image response: %v", err)
 	}
 }

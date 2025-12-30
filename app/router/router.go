@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"strings"
 
 	"armario-mascota-me/app/controller"
 )
@@ -30,6 +31,17 @@ func SetupRoutes(controllers *Controllers) {
 
 	// Get pending design assets
 	http.HandleFunc("/admin/design-assets/pending", controllers.DesignAsset.GetPendingDesignAssets)
+
+	// Get optimized image for pending asset
+	http.HandleFunc("/admin/design-assets/pending/", func(w http.ResponseWriter, r *http.Request) {
+		// Check if this is the image endpoint
+		if strings.HasSuffix(r.URL.Path, "/image") {
+			controllers.DesignAsset.GetOptimizedImage(w, r)
+			return
+		}
+		// Otherwise, return 404
+		http.Error(w, "Not found", http.StatusNotFound)
+	})
 
 	// Design asset by code - handles both GET (get) and PUT (update)
 	http.HandleFunc("/admin/design-assets/", func(w http.ResponseWriter, r *http.Request) {
