@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"io/ioutil"
 	"log"
@@ -21,7 +22,17 @@ const (
 	// Size settings (max dimension)
 	maxSizeThumb  = 300
 	maxSizeMedium = 800
+	// Background color for PNG transparency flattening
+	// Using white (#FFFFFF) as default
+	backgroundColor = "#FFFFFF"
 )
+
+// getBackgroundColor returns the background color for flattening transparent images
+func getBackgroundColor() color.Color {
+	// Parse hex color #FFFFFF (white)
+	// R: 255, G: 255, B: 255, A: 255
+	return color.RGBA{R: 255, G: 255, B: 255, A: 255}
+}
 
 // EnsureCacheDir ensures the cache directory exists, creates it if it doesn't
 func EnsureCacheDir() error {
@@ -82,6 +93,32 @@ func OptimizeImage(imageData []byte, size string) ([]byte, error) {
 
 	log.Printf("📸 Image decoded: format=%s, bounds=%v", format, img.Bounds())
 
+	// Flatten transparent images onto a solid background
+	// JPEG doesn't support transparency, so we need to flatten PNG images with alpha channel
+	var processedImg image.Image = img
+	
+	// Check if image might have transparency (PNG format or NRGBA type)
+	needsFlattening := false
+	if format == "png" {
+		needsFlattening = true
+	} else if _, ok := img.(*image.NRGBA); ok {
+		needsFlattening = true
+	} else if rgba, ok := img.(*image.RGBA); ok {
+		// Quick check: if it's RGBA, check if it might have transparency
+		// We'll flatten it anyway to be safe, as it's a PNG-like format
+		needsFlattening = true
+		_ = rgba // avoid unused variable warning
+	}
+
+	if needsFlattening {
+		log.Printf("🖼️  Image may have transparency, flattening onto background color %s", backgroundColor)
+		bounds := img.Bounds()
+		// Create a new image with solid background color
+		bgImg := imaging.New(bounds.Dx(), bounds.Dy(), getBackgroundColor())
+		// Overlay the original image on top of the background
+		processedImg = imaging.Overlay(bgImg, img, image.Pt(0, 0), 1.0)
+	}
+
 	// Determine max dimension and quality based on size
 	var maxDim int
 	var quality int
@@ -100,11 +137,11 @@ func OptimizeImage(imageData []byte, size string) ([]byte, error) {
 	}
 
 	// Resize image if needed
-	bounds := img.Bounds()
+	bounds := processedImg.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
 
-	var resizedImg image.Image = img
+	var resizedImg image.Image = processedImg
 	if width > maxDim || height > maxDim {
 		// Calculate new dimensions maintaining aspect ratio
 		var newWidth, newHeight int
@@ -117,7 +154,7 @@ func OptimizeImage(imageData []byte, size string) ([]byte, error) {
 		}
 
 		log.Printf("🔄 Resizing image: %dx%d -> %dx%d", width, height, newWidth, newHeight)
-		resizedImg = imaging.Resize(img, newWidth, newHeight, imaging.Lanczos)
+		resizedImg = imaging.Resize(processedImg, newWidth, newHeight, imaging.Lanczos)
 	}
 
 	// Encode to JPEG
