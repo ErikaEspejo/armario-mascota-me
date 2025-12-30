@@ -28,6 +28,9 @@ func SetupRoutes(controllers *Controllers) {
 	// Design assets routes
 	http.HandleFunc("/admin/design-assets/load", controllers.DesignAsset.LoadImages)
 
+	// Get pending design assets
+	http.HandleFunc("/admin/design-assets/pending", controllers.DesignAsset.GetPendingDesignAssets)
+
 	// Design asset by code - handles both GET (get) and PUT (update)
 	http.HandleFunc("/admin/design-assets/", func(w http.ResponseWriter, r *http.Request) {
 		// Route to appropriate handler based on HTTP method

@@ -58,10 +58,15 @@ func (c *DesignAssetController) LoadImages(w http.ResponseWriter, r *http.Reques
 // GetDesignAssetByCode handles GET /admin/design-assets/:code
 // Returns a design asset with all details including image for editing
 func (c *DesignAssetController) GetDesignAssetByCode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	// Extract code from URL path
 	// Path format: /admin/design-assets/{code}
 	path := strings.TrimPrefix(r.URL.Path, "/admin/design-assets/")
-	if path == "" || path == "load" {
+	if path == "" || path == "load" || path == "pending" {
 		http.Error(w, "code parameter is required", http.StatusBadRequest)
 		return
 	}
@@ -87,9 +92,14 @@ func (c *DesignAssetController) GetDesignAssetByCode(w http.ResponseWriter, r *h
 // UpdateDesignAsset handles PUT /admin/design-assets/:code
 // Updates description and has_highlights fields
 func (c *DesignAssetController) UpdateDesignAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	// Extract code from URL path
 	path := strings.TrimPrefix(r.URL.Path, "/admin/design-assets/")
-	if path == "" || path == "load" {
+	if path == "" || path == "load" || path == "pending" {
 		http.Error(w, "code parameter is required", http.StatusBadRequest)
 		return
 	}
@@ -119,4 +129,29 @@ func (c *DesignAssetController) UpdateDesignAsset(w http.ResponseWriter, r *http
 		"message": "Design asset updated successfully",
 		"code":    code,
 	})
+}
+
+// GetPendingDesignAssets handles GET /admin/design-assets/pending
+// Returns all design assets with status = 'pending'
+func (c *DesignAssetController) GetPendingDesignAssets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := context.Background()
+
+	// Get pending design assets from database
+	assets, err := c.repository.GetPending(ctx)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get pending design assets: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Set content type and return JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(assets); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }

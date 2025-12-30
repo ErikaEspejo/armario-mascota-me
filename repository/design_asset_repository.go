@@ -190,3 +190,65 @@ func (r *DesignAssetRepository) UpdateDescriptionAndHighlights(ctx context.Conte
 	log.Printf("✅ Successfully updated design asset: code=%s (rows affected: %d)", code, rowsAffected)
 	return nil
 }
+
+// GetPending retrieves all design assets with status = 'pending'
+func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.DesignAssetDetail, error) {
+	log.Printf("🔍 Fetching all design assets with status = 'pending'")
+
+	query := `
+		SELECT code, 
+		       COALESCE(description, '') as description, 
+		       drive_file_id, 
+		       image_url,
+		       COALESCE(color_primary, '') as color_primary, 
+		       COALESCE(color_secondary, '') as color_secondary, 
+		       COALESCE(hoodie_type, '') as hoodie_type, 
+		       COALESCE(image_type, '') as image_type,
+		       COALESCE(deco_id, '') as deco_id, 
+		       COALESCE(deco_base, '') as deco_base, 
+		       is_active, 
+		       has_highlights
+		FROM design_assets
+		WHERE status = 'pending'
+		ORDER BY created_at ASC
+	`
+
+	rows, err := db.DB.QueryContext(ctx, query)
+	if err != nil {
+		log.Printf("❌ Error fetching pending design assets: %v", err)
+		return nil, fmt.Errorf("failed to get pending design assets: %w", err)
+	}
+	defer rows.Close()
+
+	var assets []models.DesignAssetDetail
+	for rows.Next() {
+		var asset models.DesignAssetDetail
+		err := rows.Scan(
+			&asset.Code,
+			&asset.Description,
+			&asset.DriveFileID,
+			&asset.ImageURL,
+			&asset.ColorPrimary,
+			&asset.ColorSecondary,
+			&asset.HoodieType,
+			&asset.ImageType,
+			&asset.DecoID,
+			&asset.DecoBase,
+			&asset.IsActive,
+			&asset.HasHighlights,
+		)
+		if err != nil {
+			log.Printf("❌ Error scanning pending design asset: %v", err)
+			continue
+		}
+		assets = append(assets, asset)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("❌ Error iterating pending design assets: %v", err)
+		return nil, fmt.Errorf("failed to iterate pending design assets: %w", err)
+	}
+
+	log.Printf("✓ Successfully fetched %d pending design assets", len(assets))
+	return assets, nil
+}

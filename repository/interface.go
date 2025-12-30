@@ -12,5 +12,5 @@ type DesignAssetRepositoryInterface interface {
 	Insert(ctx context.Context, asset *models.DesignAssetDB) error
 	GetByCode(ctx context.Context, code string) (*models.DesignAssetDetail, error)
 	UpdateDescriptionAndHighlights(ctx context.Context, code string, description string, hasHighlights bool) error
+	GetPending(ctx context.Context) ([]models.DesignAssetDetail, error)
 }
-
