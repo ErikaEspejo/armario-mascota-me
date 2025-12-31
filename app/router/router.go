@@ -9,6 +9,7 @@ import (
 
 type Controllers struct {
 	DesignAsset *controller.DesignAssetController
+	Item        *controller.ItemController
 }
 
 // pingHandler handles GET /ping
@@ -60,4 +61,8 @@ func SetupRoutes(controllers *Controllers) {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+
+	// Items routes
+	// Add stock to item
+	http.HandleFunc("/admin/items/stock", controllers.Item.AddStock)
 }

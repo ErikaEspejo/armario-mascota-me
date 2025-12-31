@@ -17,3 +17,8 @@ type DesignAssetRepositoryInterface interface {
 	UpdateFullDesignAsset(ctx context.Context, id int, code, description, colorPrimary, colorSecondary, hoodieType, imageType, decoID, decoBase string, hasHighlights bool, status string) error
 	FilterDesignAssets(ctx context.Context, filters FilterParams) ([]models.DesignAssetDetail, error)
 }
+
+// ItemRepositoryInterface defines the contract for item repository operations
+type ItemRepositoryInterface interface {
+	UpsertStock(ctx context.Context, designAssetID int, size string, quantity int) (*models.AddStockResponse, error)
+}
