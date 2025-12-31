@@ -35,6 +35,9 @@ func SetupRoutes(controllers *Controllers) {
 	// Update full design asset
 	http.HandleFunc("/admin/design-assets/update", controllers.DesignAsset.UpdateFullDesignAsset)
 
+	// Filter design assets
+	http.HandleFunc("/admin/design-assets/filter", controllers.DesignAsset.FilterDesignAssets)
+
 	// Get optimized image for pending asset
 	http.HandleFunc("/admin/design-assets/pending/", func(w http.ResponseWriter, r *http.Request) {
 		// Check if this is the image endpoint

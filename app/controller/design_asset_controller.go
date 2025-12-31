@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -373,4 +374,127 @@ func (c *DesignAssetController) UpdateFullDesignAsset(w http.ResponseWriter, r *
 		"id":      id,
 		"code":    code,
 	})
+}
+
+// FilterDesignAssets handles GET /admin/design-assets/filter
+// Filters design assets by query parameters: colorPrimary, colorSecondary, hoodieType, imageType, decoBase
+func (c *DesignAssetController) FilterDesignAssets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := context.Background()
+
+	// Parse query parameters
+	queryParams := r.URL.Query()
+	
+	// Helper function to decode and normalize query param
+	decodeAndNormalize := func(param string) string {
+		if param == "" {
+			return ""
+		}
+		decoded, err := url.QueryUnescape(param)
+		if err != nil {
+			log.Printf("⚠️  Warning: Failed to decode param %s: %v", param, err)
+			decoded = param
+		}
+		return strings.ToLower(strings.TrimSpace(decoded))
+	}
+
+	// Extract and decode query parameters
+	colorPrimaryRaw := queryParams.Get("colorPrimary")
+	colorSecondaryRaw := queryParams.Get("colorSecondary")
+	hoodieTypeRaw := queryParams.Get("hoodieType")
+	imageTypeRaw := queryParams.Get("imageType")
+	decoBaseRaw := queryParams.Get("decoBase")
+
+	// Build FilterParams with mapped codes
+	var filters repository.FilterParams
+
+	// Map colorPrimary
+	if colorPrimaryRaw != "" {
+		colorPrimaryNormalized := decodeAndNormalize(colorPrimaryRaw)
+		colorPrimaryCode := utils.MapColorToCode(colorPrimaryNormalized)
+		filters.ColorPrimary = &colorPrimaryCode
+		log.Printf("🔍 Filter: colorPrimary=%s -> %s", colorPrimaryRaw, colorPrimaryCode)
+	}
+
+	// Map colorSecondary
+	if colorSecondaryRaw != "" {
+		colorSecondaryNormalized := decodeAndNormalize(colorSecondaryRaw)
+		colorSecondaryCode := utils.MapColorToCode(colorSecondaryNormalized)
+		filters.ColorSecondary = &colorSecondaryCode
+		log.Printf("🔍 Filter: colorSecondary=%s -> %s", colorSecondaryRaw, colorSecondaryCode)
+	}
+
+	// Map hoodieType
+	if hoodieTypeRaw != "" {
+		hoodieTypeNormalized := decodeAndNormalize(hoodieTypeRaw)
+		hoodieTypeCode := utils.MapHoodieTypeToCode(hoodieTypeNormalized)
+		filters.HoodieType = &hoodieTypeCode
+		log.Printf("🔍 Filter: hoodieType=%s -> %s", hoodieTypeRaw, hoodieTypeCode)
+	}
+
+	// Map imageType
+	if imageTypeRaw != "" {
+		imageTypeNormalized := decodeAndNormalize(imageTypeRaw)
+		imageTypeCode := utils.MapImageTypeToCode(imageTypeNormalized)
+		filters.ImageType = &imageTypeCode
+		log.Printf("🔍 Filter: imageType=%s -> %s", imageTypeRaw, imageTypeCode)
+	}
+
+	// Map decoBase
+	if decoBaseRaw != "" {
+		decoBaseNormalized := decodeAndNormalize(decoBaseRaw)
+		// Map decoBase values: N/A -> 0, Círculo -> C, Nube -> N
+		decoBaseMapped := decoBaseNormalized
+		if decoBaseNormalized == "n/a" {
+			decoBaseMapped = "0"
+		} else if decoBaseNormalized == "círculo" || decoBaseNormalized == "circulo" {
+			decoBaseMapped = "C"
+		} else if decoBaseNormalized == "nube" {
+			decoBaseMapped = "N"
+		}
+		decoBaseUpper := strings.ToUpper(decoBaseMapped)
+		filters.DecoBase = &decoBaseUpper
+		log.Printf("🔍 Filter: decoBase=%s -> %s", decoBaseRaw, decoBaseUpper)
+	}
+
+	// Get filtered design assets from database
+	assets, err := c.repository.FilterDesignAssets(ctx, filters)
+	if err != nil {
+		log.Printf("❌ Error filtering design assets: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to filter design assets: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Build response with optimized image URLs (similar to GetPendingDesignAssets)
+	// Convert codes back to readable values before sending response
+	response := make([]models.DesignAssetDetailWithOptimizedURL, len(assets))
+	for i, asset := range assets {
+		// Convert codes to readable values
+		asset.ColorPrimary = utils.MapCodeToColor(asset.ColorPrimary)
+		asset.ColorSecondary = utils.MapCodeToColor(asset.ColorSecondary)
+		asset.HoodieType = utils.MapCodeToHoodieType(asset.HoodieType)
+		asset.ImageType = utils.MapCodeToImageType(asset.ImageType)
+		asset.DecoBase = utils.MapCodeToDecoBase(asset.DecoBase)
+
+		// Construct URL to optimized image endpoint
+		optimizedURL := fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", asset.ID)
+		response[i] = models.DesignAssetDetailWithOptimizedURL{
+			DesignAssetDetail:  asset,
+			OptimizedImageUrl: optimizedURL,
+		}
+	}
+
+	log.Printf("✅ FilterDesignAssets: Returning %d filtered design assets", len(response))
+
+	// Set content type and return JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("❌ Error encoding filter response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }

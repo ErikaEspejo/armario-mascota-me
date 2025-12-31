@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"armario-mascota-me/db"
@@ -22,6 +23,15 @@ func NewDesignAssetRepository() *DesignAssetRepository {
 
 // Ensure DesignAssetRepository implements DesignAssetRepositoryInterface
 var _ DesignAssetRepositoryInterface = (*DesignAssetRepository)(nil)
+
+// FilterParams represents optional filter parameters for design assets
+type FilterParams struct {
+	ColorPrimary   *string
+	ColorSecondary *string
+	HoodieType     *string
+	ImageType      *string
+	DecoBase       *string
+}
 
 // ExistsByDriveFileID checks if a design asset exists by drive_file_id
 func (r *DesignAssetRepository) ExistsByDriveFileID(ctx context.Context, driveFileID string) (bool, error) {
@@ -45,7 +55,7 @@ func (r *DesignAssetRepository) GetMaxDecoID(ctx context.Context) (int, error) {
 	var maxDecoID sql.NullInt64
 	// Cast deco_id to integer for MAX comparison, then convert back
 	query := `SELECT MAX(CAST(deco_id AS INTEGER)) FROM design_assets WHERE deco_id IS NOT NULL AND deco_id ~ '^[0-9]+$'`
-	
+
 	err := db.DB.QueryRowContext(ctx, query).Scan(&maxDecoID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get max deco_id: %w", err)
@@ -94,7 +104,7 @@ func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.Design
 	status := "pending"
 
 	result, err := db.DB.ExecContext(ctx, query,
-		code,                    // Use drive_file_id as code
+		code, // Use drive_file_id as code
 		asset.DriveFileID,
 		asset.ImageURL,
 		nextDecoIDStr, // Convert to string since deco_id is text in database
@@ -313,7 +323,7 @@ func (r *DesignAssetRepository) GetByID(ctx context.Context, id int) (*models.De
 
 // UpdateFullDesignAsset updates all fields of a design asset by ID
 func (r *DesignAssetRepository) UpdateFullDesignAsset(ctx context.Context, id int, code, description, colorPrimary, colorSecondary, hoodieType, imageType, decoID, decoBase string, hasHighlights bool, status string) error {
-	log.Printf("🔄 Updating full design asset: id=%d, code=%s, description=%s, colorPrimary=%s, colorSecondary=%s, hoodieType=%s, imageType=%s, decoID=%s, decoBase=%s, hasHighlights=%v, status=%s", 
+	log.Printf("🔄 Updating full design asset: id=%d, code=%s, description=%s, colorPrimary=%s, colorSecondary=%s, hoodieType=%s, imageType=%s, decoID=%s, decoBase=%s, hasHighlights=%v, status=%s",
 		id, code, description, colorPrimary, colorSecondary, hoodieType, imageType, decoID, decoBase, hasHighlights, status)
 
 	query := `
@@ -331,17 +341,17 @@ func (r *DesignAssetRepository) UpdateFullDesignAsset(ctx context.Context, id in
 		WHERE id = $11
 	`
 
-	result, err := db.DB.ExecContext(ctx, query, 
-		code, 
-		description, 
-		colorPrimary, 
-		colorSecondary, 
-		hoodieType, 
-		imageType, 
-		decoID, 
-		decoBase, 
-		hasHighlights, 
-		status, 
+	result, err := db.DB.ExecContext(ctx, query,
+		code,
+		description,
+		colorPrimary,
+		colorSecondary,
+		hoodieType,
+		imageType,
+		decoID,
+		decoBase,
+		hasHighlights,
+		status,
 		id)
 	if err != nil {
 		log.Printf("❌ Error updating full design asset %d: %v", id, err)
@@ -360,4 +370,114 @@ func (r *DesignAssetRepository) UpdateFullDesignAsset(ctx context.Context, id in
 
 	log.Printf("✅ Successfully updated full design asset: id=%d (rows affected: %d)", id, rowsAffected)
 	return nil
+}
+
+// FilterDesignAssets retrieves design assets matching the provided filters
+// Always filters by status='ready' and is_active=true
+func (r *DesignAssetRepository) FilterDesignAssets(ctx context.Context, filters FilterParams) ([]models.DesignAssetDetail, error) {
+	log.Printf("🔍 Filtering design assets with filters: colorPrimary=%v, colorSecondary=%v, hoodieType=%v, imageType=%v, decoBase=%v",
+		filters.ColorPrimary, filters.ColorSecondary, filters.HoodieType, filters.ImageType, filters.DecoBase)
+
+	// Build base query
+	baseQuery := `
+		SELECT id, code, 
+		       COALESCE(description, '') as description, 
+		       drive_file_id, 
+		       image_url,
+		       COALESCE(color_primary, '') as color_primary, 
+		       COALESCE(color_secondary, '') as color_secondary, 
+		       COALESCE(hoodie_type, '') as hoodie_type, 
+		       COALESCE(image_type, '') as image_type,
+		       COALESCE(deco_id, '') as deco_id, 
+		       COALESCE(deco_base, '') as deco_base, 
+		       is_active, 
+		       has_highlights
+		FROM design_assets
+		WHERE status = 'ready' AND is_active = true
+	`
+
+	// Build WHERE conditions dynamically
+	var conditions []string
+	var args []interface{}
+	argIndex := 1
+
+	if filters.ColorPrimary != nil && *filters.ColorPrimary != "" {
+		conditions = append(conditions, fmt.Sprintf("color_primary = $%d", argIndex))
+		args = append(args, *filters.ColorPrimary)
+		argIndex++
+	}
+
+	if filters.ColorSecondary != nil && *filters.ColorSecondary != "" {
+		conditions = append(conditions, fmt.Sprintf("color_secondary = $%d", argIndex))
+		args = append(args, *filters.ColorSecondary)
+		argIndex++
+	}
+
+	if filters.HoodieType != nil && *filters.HoodieType != "" {
+		conditions = append(conditions, fmt.Sprintf("hoodie_type = $%d", argIndex))
+		args = append(args, *filters.HoodieType)
+		argIndex++
+	}
+
+	if filters.ImageType != nil && *filters.ImageType != "" {
+		conditions = append(conditions, fmt.Sprintf("image_type = $%d", argIndex))
+		args = append(args, *filters.ImageType)
+		argIndex++
+	}
+
+	if filters.DecoBase != nil && *filters.DecoBase != "" {
+		conditions = append(conditions, fmt.Sprintf("deco_base = $%d", argIndex))
+		args = append(args, *filters.DecoBase)
+		argIndex++
+	}
+
+	// Append conditions to query
+	if len(conditions) > 0 {
+		baseQuery += " AND " + strings.Join(conditions, " AND ")
+	}
+
+	// Add ORDER BY
+	baseQuery += " ORDER BY created_at DESC"
+
+	log.Printf("🔍 Executing filter query with %d conditions", len(conditions))
+
+	rows, err := db.DB.QueryContext(ctx, baseQuery, args...)
+	if err != nil {
+		log.Printf("❌ Error filtering design assets: %v", err)
+		return nil, fmt.Errorf("failed to filter design assets: %w", err)
+	}
+	defer rows.Close()
+
+	var assets []models.DesignAssetDetail
+	for rows.Next() {
+		var asset models.DesignAssetDetail
+		err := rows.Scan(
+			&asset.ID,
+			&asset.Code,
+			&asset.Description,
+			&asset.DriveFileID,
+			&asset.ImageURL,
+			&asset.ColorPrimary,
+			&asset.ColorSecondary,
+			&asset.HoodieType,
+			&asset.ImageType,
+			&asset.DecoID,
+			&asset.DecoBase,
+			&asset.IsActive,
+			&asset.HasHighlights,
+		)
+		if err != nil {
+			log.Printf("❌ Error scanning filtered design asset: %v", err)
+			continue
+		}
+		assets = append(assets, asset)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("❌ Error iterating filtered design assets: %v", err)
+		return nil, fmt.Errorf("failed to iterate filtered design assets: %w", err)
+	}
+
+	log.Printf("✓ Successfully filtered %d design assets", len(assets))
+	return assets, nil
 }
