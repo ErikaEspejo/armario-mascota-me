@@ -310,3 +310,54 @@ func (r *DesignAssetRepository) GetByID(ctx context.Context, id int) (*models.De
 	log.Printf("✓ Successfully fetched design asset: ID=%d", id)
 	return &asset, nil
 }
+
+// UpdateFullDesignAsset updates all fields of a design asset by ID
+func (r *DesignAssetRepository) UpdateFullDesignAsset(ctx context.Context, id int, code, description, colorPrimary, colorSecondary, hoodieType, imageType, decoID, decoBase string, hasHighlights bool, status string) error {
+	log.Printf("🔄 Updating full design asset: id=%d, code=%s, description=%s, colorPrimary=%s, colorSecondary=%s, hoodieType=%s, imageType=%s, decoID=%s, decoBase=%s, hasHighlights=%v, status=%s", 
+		id, code, description, colorPrimary, colorSecondary, hoodieType, imageType, decoID, decoBase, hasHighlights, status)
+
+	query := `
+		UPDATE design_assets
+		SET code = $1, 
+		    description = $2, 
+		    color_primary = $3, 
+		    color_secondary = $4, 
+		    hoodie_type = $5, 
+		    image_type = $6, 
+		    deco_id = $7, 
+		    deco_base = $8, 
+		    has_highlights = $9, 
+		    status = $10
+		WHERE id = $11
+	`
+
+	result, err := db.DB.ExecContext(ctx, query, 
+		code, 
+		description, 
+		colorPrimary, 
+		colorSecondary, 
+		hoodieType, 
+		imageType, 
+		decoID, 
+		decoBase, 
+		hasHighlights, 
+		status, 
+		id)
+	if err != nil {
+		log.Printf("❌ Error updating full design asset %d: %v", id, err)
+		return fmt.Errorf("failed to update design asset: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("⚠️  Warning: Could not get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		log.Printf("⚠️  No rows updated for id: %d (record may not exist)", id)
+		return fmt.Errorf("design asset with id %d not found", id)
+	}
+
+	log.Printf("✅ Successfully updated full design asset: id=%d (rows affected: %d)", id, rowsAffected)
+	return nil
+}

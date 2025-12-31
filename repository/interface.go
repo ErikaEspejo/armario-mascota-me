@@ -14,4 +14,5 @@ type DesignAssetRepositoryInterface interface {
 	GetByID(ctx context.Context, id int) (*models.DesignAssetDetail, error)
 	UpdateDescriptionAndHighlights(ctx context.Context, code string, description string, hasHighlights bool) error
 	GetPending(ctx context.Context) ([]models.DesignAssetDetail, error)
+	UpdateFullDesignAsset(ctx context.Context, id int, code, description, colorPrimary, colorSecondary, hoodieType, imageType, decoID, decoBase string, hasHighlights bool, status string) error
 }

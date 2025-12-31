@@ -12,6 +12,7 @@ import (
 	"armario-mascota-me/models"
 	"armario-mascota-me/repository"
 	"armario-mascota-me/service"
+	"armario-mascota-me/utils"
 )
 
 const folderID = "1TtK0fnadxl3r1-8iYlv2GFf5LgdKxmID"
@@ -269,4 +270,107 @@ func (c *DesignAssetController) GetOptimizedImage(w http.ResponseWriter, r *http
 	if _, err := w.Write(imageData); err != nil {
 		log.Printf("❌ Error writing image response: %v", err)
 	}
+}
+
+// UpdateFullDesignAsset handles POST /admin/design-assets/update
+// Updates all fields of a design asset including code generation
+func (c *DesignAssetController) UpdateFullDesignAsset(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 UpdateFullDesignAsset: Received %s request to %s", r.Method, r.URL.Path)
+	
+	if r.Method != http.MethodPost {
+		log.Printf("❌ UpdateFullDesignAsset: Method not allowed: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse request body
+	var updateReq models.DesignAssetFullUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
+		log.Printf("❌ UpdateFullDesignAsset: Failed to decode request body: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("📋 UpdateFullDesignAsset: Request body decoded - ID: %s, Description: %s, ColorPrimary: %s, ColorSecondary: %s, HoodieType: %s, ImageType: %s, DecoBase: %s, HasHighlights: %v",
+		updateReq.ID, updateReq.Description, updateReq.ColorPrimary, updateReq.ColorSecondary, updateReq.HoodieType, updateReq.ImageType, updateReq.DecoBase, updateReq.HasHighlights)
+
+	// Convert ID from string to int
+	id, err := strconv.Atoi(updateReq.ID)
+	if err != nil {
+		log.Printf("❌ UpdateFullDesignAsset: Invalid ID format: %s, error: %v", updateReq.ID, err)
+		http.Error(w, fmt.Sprintf("Invalid id format: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("🔄 UpdateFullDesignAsset: Converting ID %s to int: %d", updateReq.ID, id)
+
+	// Normalize all strings to lowercase
+	description := strings.ToLower(strings.TrimSpace(updateReq.Description))
+	colorPrimary := strings.ToLower(strings.TrimSpace(updateReq.ColorPrimary))
+	colorSecondary := strings.ToLower(strings.TrimSpace(updateReq.ColorSecondary))
+	hoodieType := strings.ToLower(strings.TrimSpace(updateReq.HoodieType))
+	imageType := strings.ToLower(strings.TrimSpace(updateReq.ImageType))
+	decoBase := strings.ToLower(strings.TrimSpace(updateReq.DecoBase))
+
+	log.Printf("🔤 UpdateFullDesignAsset: Normalized values - Description: %s, ColorPrimary: %s, ColorSecondary: %s, HoodieType: %s, ImageType: %s, DecoBase: %s",
+		description, colorPrimary, colorSecondary, hoodieType, imageType, decoBase)
+
+	// Map values using utility functions (returns uppercase codes)
+	colorPrimaryCode := utils.MapColorToCode(colorPrimary)
+	colorSecondaryCode := utils.MapColorToCode(colorSecondary)
+	hoodieTypeCode := utils.MapHoodieTypeToCode(hoodieType)
+	imageTypeCode := utils.MapImageTypeToCode(imageType)
+	
+	// Map decoBase values: N/A -> 0, Círculo -> C, Nube -> N
+	decoBaseMapped := decoBase
+	if decoBase == "n/a" {
+		decoBaseMapped = "0"
+	} else if decoBase == "círculo" || decoBase == "circulo" {
+		decoBaseMapped = "C"
+	} else if decoBase == "nube" {
+		decoBaseMapped = "N"
+	}
+	decoBaseUpper := strings.ToUpper(decoBaseMapped)
+
+	log.Printf("🗺️  UpdateFullDesignAsset: Mapped codes - ColorPrimary: %s -> %s, ColorSecondary: %s -> %s, HoodieType: %s -> %s, ImageType: %s -> %s, DecoBase: %s -> %s",
+		colorPrimary, colorPrimaryCode, colorSecondary, colorSecondaryCode, hoodieType, hoodieTypeCode, imageType, imageTypeCode, decoBase, decoBaseUpper)
+
+	// Build code: colorPrimary_colorSecondary-hoodieType-imageType{ID}-decoBase
+	code := fmt.Sprintf("%s_%s-%s-%s%d-%s", colorPrimaryCode, colorSecondaryCode, hoodieTypeCode, imageTypeCode, id, decoBaseUpper)
+
+	log.Printf("🏷️  UpdateFullDesignAsset: Generated code: %s", code)
+
+	// Use ID (converted to string) as decoID
+	decoID := strconv.Itoa(id)
+
+	// Store values in uppercase for database
+	descriptionUpper := strings.ToUpper(description)
+	colorPrimaryUpper := colorPrimaryCode
+	colorSecondaryUpper := colorSecondaryCode
+	hoodieTypeUpper := hoodieTypeCode
+	imageTypeUpper := imageTypeCode
+	decoBaseUpperDB := decoBaseUpper
+
+	log.Printf("💾 UpdateFullDesignAsset: Preparing to update database - ID: %d, Code: %s, DecoID: %s, Status: ready", id, code, decoID)
+
+	ctx := context.Background()
+
+	// Update design asset with status="ready"
+	if err := c.repository.UpdateFullDesignAsset(ctx, id, code, descriptionUpper, colorPrimaryUpper, colorSecondaryUpper, hoodieTypeUpper, imageTypeUpper, decoID, decoBaseUpperDB, updateReq.HasHighlights, "ready"); err != nil {
+		log.Printf("❌ UpdateFullDesignAsset: Error updating full design asset: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to update design asset: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ UpdateFullDesignAsset: Successfully updated design asset - ID: %d, Code: %s", id, code)
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Design asset updated successfully",
+		"id":      id,
+		"code":    code,
+	})
 }
