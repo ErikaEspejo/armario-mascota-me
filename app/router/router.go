@@ -65,4 +65,7 @@ func SetupRoutes(controllers *Controllers) {
 	// Items routes
 	// Add stock to item
 	http.HandleFunc("/admin/items/stock", controllers.Item.AddStock)
+	
+	// Filter items
+	http.HandleFunc("/admin/items/filter", controllers.Item.FilterItems)
 }

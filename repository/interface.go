@@ -21,4 +21,5 @@ type DesignAssetRepositoryInterface interface {
 // ItemRepositoryInterface defines the contract for item repository operations
 type ItemRepositoryInterface interface {
 	UpsertStock(ctx context.Context, designAssetID int, size string, quantity int) (*models.AddStockResponse, error)
+	FilterItems(ctx context.Context, filters ItemFilterParams) ([]models.ItemCard, error)
 }

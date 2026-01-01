@@ -30,3 +30,16 @@ type AddStockResponse struct {
 	StockReserved int    `json:"stock_reserved"`
 }
 
+// ItemCard represents an item card with design asset information for filtering
+type ItemCard struct {
+	ID            int    `json:"id"`
+	SKU           string `json:"sku"`
+	Size          string `json:"size"`
+	Price         int    `json:"price"`
+	StockTotal    int    `json:"stockTotal"`
+	StockReserved int    `json:"stockReserved"`
+	DesignAssetID int    `json:"designAssetId"`
+	Description   string `json:"description"`
+	ImageUrl      string `json:"imageUrl"`
+}
+

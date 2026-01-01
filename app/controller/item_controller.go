@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"armario-mascota-me/models"
 	"armario-mascota-me/repository"
+	"armario-mascota-me/utils"
 )
 
 // ItemController handles HTTP requests for items
@@ -93,3 +95,98 @@ func (c *ItemController) AddStock(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// FilterItems handles GET /admin/items/filter
+// Filters items by query parameters: size, primaryColor, secondaryColor, hoodieType
+func (c *ItemController) FilterItems(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		log.Printf("❌ FilterItems: Method not allowed: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := context.Background()
+
+	// Parse query parameters
+	queryParams := r.URL.Query()
+
+	// Helper function to decode and normalize query param
+	decodeAndNormalize := func(param string) string {
+		if param == "" {
+			return ""
+		}
+		decoded, err := url.QueryUnescape(param)
+		if err != nil {
+			log.Printf("⚠️  Warning: Failed to decode param %s: %v", param, err)
+			decoded = param
+		}
+		return strings.ToLower(strings.TrimSpace(decoded))
+	}
+
+	// Extract and decode query parameters
+	sizeRaw := queryParams.Get("size")
+	primaryColorRaw := queryParams.Get("primaryColor")
+	secondaryColorRaw := queryParams.Get("secondaryColor")
+	hoodieTypeRaw := queryParams.Get("hoodieType")
+
+	// Build ItemFilterParams with mapped codes
+	var filters repository.ItemFilterParams
+
+	// Map size (normalize: Mini -> MN, Intermedio -> IT)
+	if sizeRaw != "" {
+		sizeNormalized := decodeAndNormalize(sizeRaw)
+		sizeCode := repository.NormalizeSize(sizeNormalized)
+		filters.Size = &sizeCode
+		log.Printf("🔍 Filter: size=%s -> %s", sizeRaw, sizeCode)
+	}
+
+	// Map primaryColor
+	if primaryColorRaw != "" {
+		primaryColorNormalized := decodeAndNormalize(primaryColorRaw)
+		primaryColorCode := utils.MapColorToCode(primaryColorNormalized)
+		filters.ColorPrimary = &primaryColorCode
+		log.Printf("🔍 Filter: primaryColor=%s -> %s", primaryColorRaw, primaryColorCode)
+	}
+
+	// Map secondaryColor
+	if secondaryColorRaw != "" {
+		secondaryColorNormalized := decodeAndNormalize(secondaryColorRaw)
+		secondaryColorCode := utils.MapColorToCode(secondaryColorNormalized)
+		filters.ColorSecondary = &secondaryColorCode
+		log.Printf("🔍 Filter: secondaryColor=%s -> %s", secondaryColorRaw, secondaryColorCode)
+	}
+
+	// Map hoodieType
+	if hoodieTypeRaw != "" {
+		hoodieTypeNormalized := decodeAndNormalize(hoodieTypeRaw)
+		hoodieTypeCode := utils.MapHoodieTypeToCode(hoodieTypeNormalized)
+		filters.HoodieType = &hoodieTypeCode
+		log.Printf("🔍 Filter: hoodieType=%s -> %s", hoodieTypeRaw, hoodieTypeCode)
+	}
+
+	// Get filtered items from database
+	items, err := c.repository.FilterItems(ctx, filters)
+	if err != nil {
+		log.Printf("❌ Error filtering items: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to filter items: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Build response with image URLs
+	response := make([]models.ItemCard, len(items))
+	for i, item := range items {
+		// Construct URL to optimized image endpoint
+		imageUrl := fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", item.DesignAssetID)
+		item.ImageUrl = imageUrl
+		response[i] = item
+	}
+
+	log.Printf("✅ FilterItems: Returning %d filtered items", len(response))
+
+	// Set content type and return JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("❌ Error encoding filter response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
