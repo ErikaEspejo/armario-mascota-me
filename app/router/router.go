@@ -8,8 +8,9 @@ import (
 )
 
 type Controllers struct {
-	DesignAsset *controller.DesignAssetController
-	Item        *controller.ItemController
+	DesignAsset   *controller.DesignAssetController
+	Item          *controller.ItemController
+	ReservedOrder *controller.ReservedOrderController
 }
 
 // pingHandler handles GET /ping
@@ -68,4 +69,44 @@ func SetupRoutes(controllers *Controllers) {
 	
 	// Filter items
 	http.HandleFunc("/admin/items/filter", controllers.Item.FilterItems)
+
+	// Reserved orders routes
+	// Create reserved order
+	http.HandleFunc("/admin/reserved-orders", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			controllers.ReservedOrder.CreateOrder(w, r)
+		} else if r.Method == http.MethodGet {
+			controllers.ReservedOrder.ListOrders(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Reserved order actions (must be before the generic /:id route)
+	http.HandleFunc("/admin/reserved-orders/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/admin/reserved-orders/")
+		
+		// Route to specific actions first
+		if strings.HasSuffix(path, "/cancel") {
+			controllers.ReservedOrder.CancelOrder(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/complete") {
+			controllers.ReservedOrder.CompleteOrder(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/items") {
+			controllers.ReservedOrder.AddItem(w, r)
+			return
+		}
+		
+		// Otherwise, treat as GET /admin/reserved-orders/:id
+		if r.Method == http.MethodGet {
+			controllers.ReservedOrder.GetOrder(w, r)
+			return
+		}
+		
+		// Method not allowed
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
 }

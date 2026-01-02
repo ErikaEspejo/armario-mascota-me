@@ -23,3 +23,13 @@ type ItemRepositoryInterface interface {
 	UpsertStock(ctx context.Context, designAssetID int, size string, quantity int) (*models.AddStockResponse, error)
 	FilterItems(ctx context.Context, filters ItemFilterParams) ([]models.ItemCard, error)
 }
+
+// ReservedOrderRepositoryInterface defines the contract for reserved order repository operations
+type ReservedOrderRepositoryInterface interface {
+	Create(ctx context.Context, req *models.CreateReservedOrderRequest) (*models.ReservedOrder, error)
+	AddItem(ctx context.Context, orderID int64, itemID int64, qty int) (*models.ReservedOrderLine, error)
+	GetByID(ctx context.Context, id int64) (*models.ReservedOrderResponse, error)
+	List(ctx context.Context, status *string) ([]models.ReservedOrderListItem, error)
+	Cancel(ctx context.Context, id int64) (*models.ReservedOrder, error)
+	Complete(ctx context.Context, id int64) (*models.ReservedOrder, error)
+}

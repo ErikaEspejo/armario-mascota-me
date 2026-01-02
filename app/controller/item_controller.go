@@ -134,7 +134,7 @@ func (c *ItemController) FilterItems(w http.ResponseWriter, r *http.Request) {
 	// Map size (normalize: Mini -> MN, Intermedio -> IT)
 	if sizeRaw != "" {
 		sizeNormalized := decodeAndNormalize(sizeRaw)
-		sizeCode := repository.NormalizeSize(sizeNormalized)
+		sizeCode := utils.NormalizeSize(sizeNormalized)
 		filters.Size = &sizeCode
 		log.Printf("🔍 Filter: size=%s -> %s", sizeRaw, sizeCode)
 	}

@@ -20,24 +20,6 @@ type ItemFilterParams struct {
 	HoodieType     *string
 }
 
-// NormalizeSize normalizes size values: Mini -> MN, Intermedio -> IT
-func NormalizeSize(size string) string {
-	sizeUpper := strings.ToUpper(strings.TrimSpace(size))
-	
-	// Normalize Mini variations to MN
-	if sizeUpper == "MINI" || sizeUpper == "MN" {
-		return "MN"
-	}
-	
-	// Normalize Intermedio variations to IT
-	if sizeUpper == "INTERMEDIO" || sizeUpper == "IT" {
-		return "IT"
-	}
-	
-	// Return original size (already trimmed and uppercase)
-	return sizeUpper
-}
-
 // ItemRepository handles database operations for items
 type ItemRepository struct{}
 
@@ -82,11 +64,11 @@ func (r *ItemRepository) UpsertStock(ctx context.Context, designAssetID int, siz
 	log.Printf("✓ Design asset found: code=%s, hoodie_type=%s", code, hoodieType)
 
 	// Normalize size: Mini -> MN, Intermedio -> IT
-	sizeNormalized := NormalizeSize(size)
+	sizeNormalized := utils.NormalizeSize(size)
 	log.Printf("📏 Size normalized: %s -> %s", size, sizeNormalized)
 
-	// Calculate price based on hoodie_type (buso_type) and size
-	price := utils.CalculatePrice(hoodieType, sizeNormalized)
+	// Calculate price based on hoodie_type (buso_type) and size (retail price by default)
+	price := utils.CalculatePriceLegacy(hoodieType, sizeNormalized)
 	log.Printf("💰 Calculated price: %d cents for hoodie_type=%s, size=%s", price, hoodieType, sizeNormalized)
 
 	// Generate SKU: size + "_" + code (using normalized size)
