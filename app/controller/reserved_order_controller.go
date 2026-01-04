@@ -13,6 +13,7 @@ import (
 
 	"armario-mascota-me/models"
 	"armario-mascota-me/repository"
+	"armario-mascota-me/utils"
 )
 
 // ReservedOrderController handles HTTP requests for reserved orders
@@ -200,6 +201,328 @@ func (c *ReservedOrderController) AddItem(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(line); err != nil {
 		log.Printf("❌ AddItem: Error encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// RemoveItem handles DELETE /admin/reserved-orders/:id/items/:itemId
+// Removes an item from a reserved order and releases stock reservation
+// Example request:
+// DELETE /admin/reserved-orders/1/items/123
+// Example response:
+// {
+//   "message": "Item removed successfully"
+// }
+func (c *ReservedOrderController) RemoveItem(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 RemoveItem: Received %s request to %s", r.Method, r.URL.Path)
+
+	if r.Method != http.MethodDelete {
+		log.Printf("❌ RemoveItem: Method not allowed: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract order ID and item ID from URL path
+	// Path format: /admin/reserved-orders/{orderId}/items/{itemId}
+	path := strings.TrimPrefix(r.URL.Path, "/admin/reserved-orders/")
+	if path == "" {
+		http.Error(w, "order id parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Split path to get orderId and itemId
+	// Expected format: {orderId}/items/{itemId}
+	parts := strings.Split(path, "/")
+	if len(parts) != 3 || parts[1] != "items" {
+		http.Error(w, "invalid path format. Expected: /admin/reserved-orders/{orderId}/items/{itemId}", http.StatusBadRequest)
+		return
+	}
+
+	orderID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		log.Printf("❌ RemoveItem: Invalid order id: %s", parts[0])
+		http.Error(w, "invalid order id parameter", http.StatusBadRequest)
+		return
+	}
+
+	itemID, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		log.Printf("❌ RemoveItem: Invalid item id: %s", parts[2])
+		http.Error(w, "invalid item id parameter", http.StatusBadRequest)
+		return
+	}
+
+	ctx := context.Background()
+	err = c.repository.RemoveItem(ctx, orderID, itemID)
+	if err != nil {
+		log.Printf("❌ RemoveItem: Error removing item: %v", err)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "not found") {
+			http.Error(w, errMsg, http.StatusNotFound)
+			return
+		}
+		if strings.Contains(errMsg, "not in reserved status") {
+			http.Error(w, errMsg, http.StatusBadRequest)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to remove item: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ RemoveItem: Successfully removed item_id=%d from order_id=%d", itemID, orderID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]string{"message": "Item removed successfully"}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("❌ RemoveItem: Error encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// UpdateOrder handles PUT /admin/reserved-orders/:id
+// Updates a reserved order with its lines
+// Example request:
+// PUT /admin/reserved-orders/1
+// {
+//   "id": 1,
+//   "status": "reserved",
+//   "assignedTo": "Erika",
+//   "orderType": "retail",
+//   "customerName": "Pepito",
+//   "customerPhone": "3152956953",
+//   "notes": "Mayorista",
+//   "lines": [
+//     {
+//       "id": 1,
+//       "reservedOrderId": 1,
+//       "itemId": 27,
+//       "qty": 1
+//     }
+//   ]
+// }
+// Example response:
+// {
+//   "id": 1,
+//   "status": "reserved",
+//   "assignedTo": "Erika",
+//   "orderType": "retail",
+//   "customerName": "Pepito",
+//   "customerPhone": "3152956953",
+//   "notes": "Mayorista",
+//   "createdAt": "2024-01-15T10:30:00Z",
+//   "updatedAt": "2024-01-15T10:30:00Z",
+//   "lines": [
+//     {
+//       "id": 1,
+//       "reservedOrderId": 1,
+//       "itemId": 27,
+//       "qty": 1,
+//       "unitPrice": 50000,
+//       "createdAt": "2024-01-15T10:30:00Z"
+//     }
+//   ],
+//   "total": 50000
+// }
+func (c *ReservedOrderController) UpdateOrder(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 UpdateOrder: Received %s request to %s", r.Method, r.URL.Path)
+
+	if r.Method != http.MethodPut {
+		log.Printf("❌ UpdateOrder: Method not allowed: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract order ID from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/admin/reserved-orders/")
+	if path == "" {
+		http.Error(w, "order id parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check if path contains sub-paths (like /items, /cancel, /complete)
+	if strings.Contains(path, "/") {
+		http.Error(w, "invalid path format", http.StatusBadRequest)
+		return
+	}
+
+	orderID, err := strconv.ParseInt(path, 10, 64)
+	if err != nil {
+		log.Printf("❌ UpdateOrder: Invalid order id: %s", path)
+		http.Error(w, "invalid order id parameter", http.StatusBadRequest)
+		return
+	}
+
+	var req models.UpdateReservedOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("❌ UpdateOrder: Failed to decode request body: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate that the order ID in the body matches the URL
+	if req.ID != orderID {
+		log.Printf("❌ UpdateOrder: Order ID mismatch: URL=%d, body=%d", orderID, req.ID)
+		http.Error(w, "order id in URL does not match order id in body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if strings.TrimSpace(req.AssignedTo) == "" {
+		log.Printf("❌ UpdateOrder: assignedTo is required")
+		http.Error(w, "assignedTo is required", http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(req.OrderType) == "" {
+		log.Printf("❌ UpdateOrder: orderType is required")
+		http.Error(w, "orderType is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate lines - qty must be > 0 (qty=0 means delete, so don't include in request)
+	for i, line := range req.Lines {
+		if line.Qty <= 0 {
+			log.Printf("❌ UpdateOrder: Line %d has invalid qty: %d (use qty > 0 or omit line to delete)", i, line.Qty)
+			http.Error(w, fmt.Sprintf("line %d: qty must be greater than 0 (omit line to delete)", i), http.StatusBadRequest)
+			return
+		}
+		if line.ReservedOrderID != orderID {
+			log.Printf("❌ UpdateOrder: Line %d reservedOrderId mismatch: %d != %d", i, line.ReservedOrderID, orderID)
+			http.Error(w, fmt.Sprintf("line %d: reservedOrderId must match order id", i), http.StatusBadRequest)
+			return
+		}
+	}
+
+	ctx := context.Background()
+	order, err := c.repository.UpdateOrder(ctx, &req)
+	if err != nil {
+		log.Printf("❌ UpdateOrder: Error updating order: %v", err)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "not found") {
+			http.Error(w, errMsg, http.StatusNotFound)
+			return
+		}
+		if strings.Contains(errMsg, "not in reserved status") {
+			http.Error(w, errMsg, http.StatusBadRequest)
+			return
+		}
+		if strings.Contains(errMsg, "insufficient stock") {
+			http.Error(w, errMsg, http.StatusBadRequest)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to update order: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ UpdateOrder: Successfully updated order_id=%d", orderID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(order); err != nil {
+		log.Printf("❌ UpdateOrder: Error encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// UpdateItemQuantity handles PUT /admin/reserved-orders/:orderId/items/:itemId
+// Updates the quantity of an item in a reserved order
+// Example request:
+// PUT /admin/reserved-orders/1/items/123
+// {
+//   "qty": 3
+// }
+// Example response:
+// {
+//   "id": 1,
+//   "reservedOrderId": 1,
+//   "itemId": 123,
+//   "qty": 3,
+//   "unitPrice": 50000,
+//   "createdAt": "2024-01-15T10:30:00Z"
+// }
+func (c *ReservedOrderController) UpdateItemQuantity(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 UpdateItemQuantity: Received %s request to %s", r.Method, r.URL.Path)
+
+	if r.Method != http.MethodPut && r.Method != http.MethodPatch {
+		log.Printf("❌ UpdateItemQuantity: Method not allowed: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract order ID and item ID from URL path
+	// Path format: /admin/reserved-orders/{orderId}/items/{itemId}
+	path := strings.TrimPrefix(r.URL.Path, "/admin/reserved-orders/")
+	if path == "" {
+		http.Error(w, "order id parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Split path to get orderId and itemId
+	// Expected format: {orderId}/items/{itemId}
+	parts := strings.Split(path, "/")
+	if len(parts) != 3 || parts[1] != "items" {
+		http.Error(w, "invalid path format. Expected: /admin/reserved-orders/{orderId}/items/{itemId}", http.StatusBadRequest)
+		return
+	}
+
+	orderID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		log.Printf("❌ UpdateItemQuantity: Invalid order id: %s", parts[0])
+		http.Error(w, "invalid order id parameter", http.StatusBadRequest)
+		return
+	}
+
+	itemID, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		log.Printf("❌ UpdateItemQuantity: Invalid item id: %s", parts[2])
+		http.Error(w, "invalid item id parameter", http.StatusBadRequest)
+		return
+	}
+
+	var req models.UpdateItemQuantityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("❌ UpdateItemQuantity: Failed to decode request body: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.Qty <= 0 {
+		log.Printf("❌ UpdateItemQuantity: Invalid qty: %d", req.Qty)
+		http.Error(w, "qty must be greater than 0", http.StatusBadRequest)
+		return
+	}
+
+	ctx := context.Background()
+	line, err := c.repository.UpdateItemQuantity(ctx, orderID, itemID, req.Qty)
+	if err != nil {
+		log.Printf("❌ UpdateItemQuantity: Error updating item quantity: %v", err)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "not found") {
+			http.Error(w, errMsg, http.StatusNotFound)
+			return
+		}
+		if strings.Contains(errMsg, "not in reserved status") {
+			http.Error(w, errMsg, http.StatusBadRequest)
+			return
+		}
+		if strings.Contains(errMsg, "insufficient stock") {
+			http.Error(w, errMsg, http.StatusBadRequest)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to update item quantity: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ UpdateItemQuantity: Successfully updated item_id=%d quantity to %d in order_id=%d", itemID, req.Qty, orderID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(line); err != nil {
+		log.Printf("❌ UpdateItemQuantity: Error encoding response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
@@ -503,10 +826,15 @@ func (c *ReservedOrderController) CompleteOrder(w http.ResponseWriter, r *http.R
 //             "description": "Hoodie con diseño especial",
 //             "colorPrimary": "BL",
 //             "colorSecondary": "NG",
-//             "hoodieType": "HO",
-//             "imageType": "FR",
+//             "hoodieType": "BE",
+//             "imageType": "IT",
 //             "decoId": "123",
-//             "decoBase": "BA",
+//             "decoBase": "C",
+//             "colorPrimaryLabel": "negro",
+//             "colorSecondaryLabel": "azul cielo",
+//             "hoodieTypeLabel": "buso tipo esqueleto",
+//             "imageTypeLabel": "buso pequeño (tallas mini - intermedio)",
+//             "decoBaseLabel": "Círculo",
 //             "imageUrlThumb": "/admin/design-assets/pending/45/image?size=thumb",
 //             "imageUrlMedium": "/admin/design-assets/pending/45/image?size=medium"
 //           }
@@ -533,12 +861,22 @@ func (c *ReservedOrderController) GetSeparatedCarts(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Build image endpoints for each item
+	// Build image endpoints and apply mappings for readable labels
 	for i := range carts {
 		for j := range carts[i].Lines {
-			designAssetID := carts[i].Lines[j].Item.DesignAssetID
-			carts[i].Lines[j].Item.ImageUrlThumb = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", designAssetID)
-			carts[i].Lines[j].Item.ImageUrlMedium = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=medium", designAssetID)
+			item := &carts[i].Lines[j].Item
+			designAssetID := item.DesignAssetID
+			
+			// Build image endpoints
+			item.ImageUrlThumb = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", designAssetID)
+			item.ImageUrlMedium = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=medium", designAssetID)
+			
+			// Apply mappings for readable labels
+			item.ColorPrimaryLabel = utils.MapCodeToColor(item.ColorPrimary)
+			item.ColorSecondaryLabel = utils.MapCodeToColor(item.ColorSecondary)
+			item.HoodieTypeLabel = utils.MapCodeToHoodieType(item.HoodieType)
+			item.ImageTypeLabel = utils.MapCodeToImageType(item.ImageType)
+			item.DecoBaseLabel = utils.MapCodeToDecoBase(item.DecoBase)
 		}
 	}
 

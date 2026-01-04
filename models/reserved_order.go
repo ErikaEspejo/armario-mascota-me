@@ -45,6 +45,50 @@ type AddItemToOrderRequest struct {
 	Qty    int   `json:"qty"`
 }
 
+// UpdateItemQuantityRequest represents the request body for updating item quantity in a reserved order
+// Example: {"qty": 3}
+type UpdateItemQuantityRequest struct {
+	Qty int `json:"qty"`
+}
+
+// UpdateReservedOrderLineRequest represents a line item in the update request
+type UpdateReservedOrderLineRequest struct {
+	ID             int64 `json:"id"`
+	ReservedOrderID int64 `json:"reservedOrderId"`
+	ItemID         int64 `json:"itemId"`
+	Qty            int   `json:"qty"`
+}
+
+// UpdateReservedOrderRequest represents the request body for updating a reserved order
+// Example:
+// {
+//   "id": 1,
+//   "status": "reserved",
+//   "assignedTo": "Erika",
+//   "orderType": "retail",
+//   "customerName": "Pepito",
+//   "customerPhone": "3152956953",
+//   "notes": "Mayorista",
+//   "lines": [
+//     {
+//       "id": 1,
+//       "reservedOrderId": 1,
+//       "itemId": 27,
+//       "qty": 1
+//     }
+//   ]
+// }
+type UpdateReservedOrderRequest struct {
+	ID            int64                            `json:"id"`
+	Status        string                           `json:"status"`
+	AssignedTo    string                           `json:"assignedTo"`
+	OrderType     string                           `json:"orderType"`
+	CustomerName  string                           `json:"customerName,omitempty"`
+	CustomerPhone string                           `json:"customerPhone,omitempty"`
+	Notes         string                           `json:"notes,omitempty"`
+	Lines         []UpdateReservedOrderLineRequest `json:"lines"`
+}
+
 // ReservedOrderResponse represents the response for a single reserved order with its lines
 // Example response:
 // {
@@ -113,14 +157,20 @@ type ItemFullInfo struct {
 	StockTotal    int    `json:"stockTotal"`
 	StockReserved int    `json:"stockReserved"`
 	DesignAssetID int    `json:"designAssetId"`
-	// Design asset information
+	// Design asset information (codes)
 	Description    string `json:"description"`
-	ColorPrimary   string `json:"colorPrimary"`
-	ColorSecondary string `json:"colorSecondary"`
-	HoodieType     string `json:"hoodieType"`
-	ImageType      string `json:"imageType"`
+	ColorPrimary   string `json:"colorPrimary"`   // Code (e.g., "BL", "NG")
+	ColorSecondary string `json:"colorSecondary"` // Code (e.g., "BL", "NG")
+	HoodieType     string `json:"hoodieType"`     // Code (e.g., "BE", "BU")
+	ImageType      string `json:"imageType"`      // Code (e.g., "IT", "DP", "XL")
 	DecoID         string `json:"decoId"`
-	DecoBase       string `json:"decoBase"`
+	DecoBase       string `json:"decoBase"` // Code (e.g., "C", "N")
+	// Design asset information (readable labels)
+	ColorPrimaryLabel   string `json:"colorPrimaryLabel"`   // Readable name (e.g., "negro")
+	ColorSecondaryLabel string `json:"colorSecondaryLabel"` // Readable name (e.g., "azul cielo")
+	HoodieTypeLabel     string `json:"hoodieTypeLabel"`     // Readable name (e.g., "buso tipo esqueleto")
+	ImageTypeLabel      string `json:"imageTypeLabel"`      // Readable name (e.g., "buso pequeño (tallas mini - intermedio)")
+	DecoBaseLabel       string `json:"decoBaseLabel"`       // Readable name (e.g., "Círculo")
 	// Image endpoints
 	ImageUrlThumb  string `json:"imageUrlThumb"`
 	ImageUrlMedium string `json:"imageUrlMedium"`
@@ -177,10 +227,15 @@ type ReservedOrderWithFullItems struct {
 //             "description": "Hoodie con diseño especial",
 //             "colorPrimary": "BL",
 //             "colorSecondary": "NG",
-//             "hoodieType": "HO",
-//             "imageType": "FR",
+//             "hoodieType": "BE",
+//             "imageType": "IT",
 //             "decoId": "123",
-//             "decoBase": "BA",
+//             "decoBase": "C",
+//             "colorPrimaryLabel": "negro",
+//             "colorSecondaryLabel": "azul cielo",
+//             "hoodieTypeLabel": "buso tipo esqueleto",
+//             "imageTypeLabel": "buso pequeño (tallas mini - intermedio)",
+//             "decoBaseLabel": "Círculo",
 //             "imageUrlThumb": "/admin/design-assets/pending/45/image?size=thumb",
 //             "imageUrlMedium": "/admin/design-assets/pending/45/image?size=medium"
 //           }

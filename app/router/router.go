@@ -98,8 +98,25 @@ func SetupRoutes(controllers *Controllers) {
 			controllers.ReservedOrder.CompleteOrder(w, r)
 			return
 		}
-		if strings.HasSuffix(path, "/items") {
+		// Handle DELETE /admin/reserved-orders/:orderId/items/:itemId
+		if strings.Contains(path, "/items/") && r.Method == http.MethodDelete {
+			controllers.ReservedOrder.RemoveItem(w, r)
+			return
+		}
+		// Handle PUT/PATCH /admin/reserved-orders/:orderId/items/:itemId
+		if strings.Contains(path, "/items/") && (r.Method == http.MethodPut || r.Method == http.MethodPatch) {
+			controllers.ReservedOrder.UpdateItemQuantity(w, r)
+			return
+		}
+		// Handle POST /admin/reserved-orders/:id/items
+		if strings.HasSuffix(path, "/items") && r.Method == http.MethodPost {
 			controllers.ReservedOrder.AddItem(w, r)
+			return
+		}
+		
+		// Handle PUT /admin/reserved-orders/:id (update entire order)
+		if r.Method == http.MethodPut && !strings.Contains(path, "/") {
+			controllers.ReservedOrder.UpdateOrder(w, r)
 			return
 		}
 		
