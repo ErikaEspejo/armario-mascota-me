@@ -1107,18 +1107,36 @@ func (r *ReservedOrderRepository) UpdateOrder(ctx context.Context, req *models.U
 	}
 
 	// Build map of requested lines (key: item_id)
+	// Include lines with qty > 0 for updates/additions
+	// Lines with qty = 0 will be processed separately for deletion
 	requestedLinesMap := make(map[int64]models.UpdateReservedOrderLineRequest)
+	linesToDelete := make(map[int64]models.UpdateReservedOrderLineRequest) // Lines with qty = 0
 	for _, line := range req.Lines {
-		if line.Qty > 0 {
+		if line.Qty == 0 {
+			linesToDelete[line.ItemID] = line
+		} else {
 			requestedLinesMap[line.ItemID] = line
 		}
 	}
 
-	// Process deletions: lines in current but not in requested or qty=0
-	for itemID, cl := range currentLinesMap {
+	// Process deletions: lines in current but not in requested, or explicitly marked with qty=0
+		for itemID, cl := range currentLinesMap {
+		shouldDelete := false
 		if _, exists := requestedLinesMap[itemID]; !exists {
+			// Not in requested lines (or has qty=0)
+			if _, hasDeleteFlag := linesToDelete[itemID]; hasDeleteFlag {
+				// Explicitly marked for deletion with qty=0
+				log.Printf("🗑️  UpdateOrder: Deleting line for item_id=%d (qty=0 in request, current qty=%d)", itemID, cl.qty)
+				shouldDelete = true
+			} else {
+				// Not in request at all
+				log.Printf("🗑️  UpdateOrder: Deleting line for item_id=%d (not in request, current qty=%d)", itemID, cl.qty)
+				shouldDelete = true
+			}
+		}
+
+		if shouldDelete {
 			// Delete line and release stock
-			log.Printf("🗑️  UpdateOrder: Deleting line for item_id=%d (qty=%d)", itemID, cl.qty)
 			queryDeleteLine := `DELETE FROM reserved_order_lines WHERE id = $1`
 			_, err = tx.ExecContext(ctx, queryDeleteLine, cl.id)
 			if err != nil {

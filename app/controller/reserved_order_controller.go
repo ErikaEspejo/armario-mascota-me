@@ -284,6 +284,7 @@ func (c *ReservedOrderController) RemoveItem(w http.ResponseWriter, r *http.Requ
 
 // UpdateOrder handles PUT /admin/reserved-orders/:id
 // Updates a reserved order with its lines
+// If qty = 0 in a line, that line will be deleted and stock will be released
 // Example request:
 // PUT /admin/reserved-orders/1
 // {
@@ -300,6 +301,12 @@ func (c *ReservedOrderController) RemoveItem(w http.ResponseWriter, r *http.Requ
 //       "reservedOrderId": 1,
 //       "itemId": 27,
 //       "qty": 1
+//     },
+//     {
+//       "id": 2,
+//       "reservedOrderId": 1,
+//       "itemId": 28,
+//       "qty": 0  // This will delete the line and release stock
 //     }
 //   ]
 // }
@@ -382,11 +389,11 @@ func (c *ReservedOrderController) UpdateOrder(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Validate lines - qty must be > 0 (qty=0 means delete, so don't include in request)
+	// Validate lines - qty = 0 means delete, qty > 0 means update/add
 	for i, line := range req.Lines {
-		if line.Qty <= 0 {
-			log.Printf("❌ UpdateOrder: Line %d has invalid qty: %d (use qty > 0 or omit line to delete)", i, line.Qty)
-			http.Error(w, fmt.Sprintf("line %d: qty must be greater than 0 (omit line to delete)", i), http.StatusBadRequest)
+		if line.Qty < 0 {
+			log.Printf("❌ UpdateOrder: Line %d has invalid qty: %d (qty must be >= 0)", i, line.Qty)
+			http.Error(w, fmt.Sprintf("line %d: qty must be >= 0 (0 to delete, >0 to update/add)", i), http.StatusBadRequest)
 			return
 		}
 		if line.ReservedOrderID != orderID {
@@ -430,10 +437,15 @@ func (c *ReservedOrderController) UpdateOrder(w http.ResponseWriter, r *http.Req
 
 // UpdateItemQuantity handles PUT /admin/reserved-orders/:orderId/items/:itemId
 // Updates the quantity of an item in a reserved order
+// If qty = 0, the item will be deleted from the order and stock will be released
 // Example request:
 // PUT /admin/reserved-orders/1/items/123
 // {
 //   "qty": 3
+// }
+// Or to delete:
+// {
+//   "qty": 0
 // }
 // Example response:
 // {
@@ -490,9 +502,41 @@ func (c *ReservedOrderController) UpdateItemQuantity(w http.ResponseWriter, r *h
 		return
 	}
 
-	if req.Qty <= 0 {
+	if req.Qty < 0 {
 		log.Printf("❌ UpdateItemQuantity: Invalid qty: %d", req.Qty)
-		http.Error(w, "qty must be greater than 0", http.StatusBadRequest)
+		http.Error(w, "qty must be >= 0 (0 to delete, >0 to update)", http.StatusBadRequest)
+		return
+	}
+
+	// If qty is 0, treat as deletion
+	if req.Qty == 0 {
+		ctx := context.Background()
+		err = c.repository.RemoveItem(ctx, orderID, itemID)
+		if err != nil {
+			log.Printf("❌ UpdateItemQuantity: Error removing item: %v", err)
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "not found") {
+				http.Error(w, errMsg, http.StatusNotFound)
+				return
+			}
+			if strings.Contains(errMsg, "not in reserved status") {
+				http.Error(w, errMsg, http.StatusBadRequest)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to remove item: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("✅ UpdateItemQuantity: Successfully removed item_id=%d from order_id=%d (qty=0)", itemID, orderID)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		response := map[string]string{"message": "Item removed successfully (qty=0)"}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("❌ UpdateItemQuantity: Error encoding response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
 		return
 	}
 
