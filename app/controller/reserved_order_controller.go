@@ -836,8 +836,9 @@ func (c *ReservedOrderController) CompleteOrder(w http.ResponseWriter, r *http.R
 	}
 }
 
-// GetSeparatedCarts handles GET /admin/reserved-orders/separated
-// Returns all reserved orders with complete item information including design asset details and image endpoints
+// GetSeparatedCarts handles GET /admin/reserved-orders/separated?status=reserved
+// Returns reserved orders with complete item information including design asset details and image endpoints
+// Optional query parameter: status (reserved, completed, canceled) - filters orders by status
 // Example response:
 // {
 //   "carts": [
@@ -897,8 +898,16 @@ func (c *ReservedOrderController) GetSeparatedCarts(w http.ResponseWriter, r *ht
 		return
 	}
 
+	// Parse status query parameter
+	status := r.URL.Query().Get("status")
+	var statusPtr *string
+	if status != "" {
+		statusPtr = &status
+		log.Printf("🔍 GetSeparatedCarts: Filtering by status=%s", status)
+	}
+
 	ctx := context.Background()
-	carts, err := c.repository.GetAllWithFullItems(ctx)
+	carts, err := c.repository.GetAllWithFullItems(ctx, statusPtr)
 	if err != nil {
 		log.Printf("❌ GetSeparatedCarts: Error fetching carts: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to fetch carts: %v", err), http.StatusInternalServerError)

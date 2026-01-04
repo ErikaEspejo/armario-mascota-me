@@ -646,17 +646,23 @@ func (r *ReservedOrderRepository) Complete(ctx context.Context, id int64) (*mode
 }
 
 // GetAllWithFullItems retrieves all reserved orders with complete item and design asset information
-func (r *ReservedOrderRepository) GetAllWithFullItems(ctx context.Context) ([]models.ReservedOrderWithFullItems, error) {
-	log.Printf("📦 GetAllWithFullItems: Fetching all orders with full item information")
+// If status is provided, filters orders by that status
+func (r *ReservedOrderRepository) GetAllWithFullItems(ctx context.Context, status *string) ([]models.ReservedOrderWithFullItems, error) {
+	log.Printf("📦 GetAllWithFullItems: Fetching orders with full item information (status=%v)", status)
 
-	// Get all orders
+	// Build query with optional status filter
 	queryOrders := `
 		SELECT id, status, assigned_to, order_type, customer_name, customer_phone, notes, created_at, updated_at
 		FROM reserved_orders
-		ORDER BY created_at DESC
 	`
+	var args []interface{}
+	if status != nil && *status != "" {
+		queryOrders += ` WHERE status = $1`
+		args = append(args, *status)
+	}
+	queryOrders += ` ORDER BY created_at DESC`
 
-	rows, err := db.DB.QueryContext(ctx, queryOrders)
+	rows, err := db.DB.QueryContext(ctx, queryOrders, args...)
 	if err != nil {
 		log.Printf("❌ GetAllWithFullItems: Error fetching orders: %v", err)
 		return nil, fmt.Errorf("failed to fetch orders: %w", err)
