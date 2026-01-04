@@ -679,7 +679,10 @@ func (c *ReservedOrderController) ListOrders(w http.ResponseWriter, r *http.Requ
 	status := r.URL.Query().Get("status")
 	var statusPtr *string
 	if status != "" {
+		// Normalize status to lowercase for consistency
+		status = strings.ToLower(strings.TrimSpace(status))
 		statusPtr = &status
+		log.Printf("🔍 ListOrders: Filtering by status=%s", status)
 	}
 
 	ctx := context.Background()
@@ -902,6 +905,8 @@ func (c *ReservedOrderController) GetSeparatedCarts(w http.ResponseWriter, r *ht
 	status := r.URL.Query().Get("status")
 	var statusPtr *string
 	if status != "" {
+		// Normalize status to lowercase for consistency
+		status = strings.ToLower(strings.TrimSpace(status))
 		statusPtr = &status
 		log.Printf("🔍 GetSeparatedCarts: Filtering by status=%s", status)
 	}
