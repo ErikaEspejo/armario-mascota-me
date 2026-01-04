@@ -645,3 +645,144 @@ func (r *ReservedOrderRepository) Complete(ctx context.Context, id int64) (*mode
 	return &order, nil
 }
 
+// GetAllWithFullItems retrieves all reserved orders with complete item and design asset information
+func (r *ReservedOrderRepository) GetAllWithFullItems(ctx context.Context) ([]models.ReservedOrderWithFullItems, error) {
+	log.Printf("📦 GetAllWithFullItems: Fetching all orders with full item information")
+
+	// Get all orders
+	queryOrders := `
+		SELECT id, status, assigned_to, order_type, customer_name, customer_phone, notes, created_at, updated_at
+		FROM reserved_orders
+		ORDER BY created_at DESC
+	`
+
+	rows, err := db.DB.QueryContext(ctx, queryOrders)
+	if err != nil {
+		log.Printf("❌ GetAllWithFullItems: Error fetching orders: %v", err)
+		return nil, fmt.Errorf("failed to fetch orders: %w", err)
+	}
+	defer rows.Close()
+
+	var orders []models.ReservedOrder
+	var customerName, customerPhone, notes sql.NullString
+
+	for rows.Next() {
+		var order models.ReservedOrder
+		err := rows.Scan(
+			&order.ID,
+			&order.Status,
+			&order.AssignedTo,
+			&order.OrderType,
+			&customerName,
+			&customerPhone,
+			&notes,
+			&order.CreatedAt,
+			&order.UpdatedAt,
+		)
+		if err != nil {
+			log.Printf("❌ GetAllWithFullItems: Error scanning order: %v", err)
+			continue
+		}
+
+		if customerName.Valid {
+			order.CustomerName = customerName.String
+		}
+		if customerPhone.Valid {
+			order.CustomerPhone = customerPhone.String
+		}
+		if notes.Valid {
+			order.Notes = notes.String
+		}
+
+		orders = append(orders, order)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("❌ GetAllWithFullItems: Error iterating orders: %v", err)
+		return nil, fmt.Errorf("failed to iterate orders: %w", err)
+	}
+
+	// Build result with lines for each order
+	result := make([]models.ReservedOrderWithFullItems, 0, len(orders))
+
+	for _, order := range orders {
+		// Get lines with complete item and design asset information
+		queryLines := `
+			SELECT rol.id, rol.reserved_order_id, rol.item_id, rol.qty, rol.unit_price, rol.created_at,
+			       i.id, i.sku, i.size, i.price, i.stock_total, i.stock_reserved, i.design_asset_id,
+			       COALESCE(da.description, '') as description,
+			       COALESCE(da.color_primary, '') as color_primary,
+			       COALESCE(da.color_secondary, '') as color_secondary,
+			       COALESCE(da.hoodie_type, '') as hoodie_type,
+			       COALESCE(da.image_type, '') as image_type,
+			       COALESCE(da.deco_id, '') as deco_id,
+			       COALESCE(da.deco_base, '') as deco_base
+			FROM reserved_order_lines rol
+			INNER JOIN items i ON rol.item_id = i.id
+			LEFT JOIN design_assets da ON i.design_asset_id = da.id
+			WHERE rol.reserved_order_id = $1
+			ORDER BY rol.created_at ASC
+		`
+
+		lineRows, err := db.DB.QueryContext(ctx, queryLines, order.ID)
+		if err != nil {
+			log.Printf("❌ GetAllWithFullItems: Error fetching lines for order %d: %v", order.ID, err)
+			continue
+		}
+
+		var lines []models.ReservedOrderLineWithItem
+		var total int64
+
+		for lineRows.Next() {
+			var line models.ReservedOrderLineWithItem
+			var item models.ItemFullInfo
+
+			err := lineRows.Scan(
+				&line.ID,
+				&line.ReservedOrderID,
+				&line.ItemID,
+				&line.Qty,
+				&line.UnitPrice,
+				&line.CreatedAt,
+				&item.ID,
+				&item.SKU,
+				&item.Size,
+				&item.Price,
+				&item.StockTotal,
+				&item.StockReserved,
+				&item.DesignAssetID,
+				&item.Description,
+				&item.ColorPrimary,
+				&item.ColorSecondary,
+				&item.HoodieType,
+				&item.ImageType,
+				&item.DecoID,
+				&item.DecoBase,
+			)
+			if err != nil {
+				log.Printf("❌ GetAllWithFullItems: Error scanning line: %v", err)
+				continue
+			}
+
+			line.Item = item
+			lines = append(lines, line)
+			total += int64(line.Qty) * line.UnitPrice
+		}
+		lineRows.Close()
+
+		if err := lineRows.Err(); err != nil {
+			log.Printf("❌ GetAllWithFullItems: Error iterating lines: %v", err)
+			continue
+		}
+
+		result = append(result, models.ReservedOrderWithFullItems{
+			ReservedOrder: order,
+			Lines:         lines,
+			Total:         total,
+		})
+	}
+
+	log.Printf("✅ GetAllWithFullItems: Successfully fetched %d orders with full item information", len(result))
+	return result, nil
+}
+

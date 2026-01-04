@@ -32,4 +32,5 @@ type ReservedOrderRepositoryInterface interface {
 	List(ctx context.Context, status *string) ([]models.ReservedOrderListItem, error)
 	Cancel(ctx context.Context, id int64) (*models.ReservedOrder, error)
 	Complete(ctx context.Context, id int64) (*models.ReservedOrder, error)
+	GetAllWithFullItems(ctx context.Context) ([]models.ReservedOrderWithFullItems, error)
 }

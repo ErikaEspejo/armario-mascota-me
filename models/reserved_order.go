@@ -104,3 +104,93 @@ type ReservedOrderListResponse struct {
 	Orders []ReservedOrderListItem `json:"orders"`
 }
 
+// ItemFullInfo represents complete item information with design asset details
+type ItemFullInfo struct {
+	ID            int64  `json:"id"`
+	SKU           string `json:"sku"`
+	Size          string `json:"size"`
+	Price         int64  `json:"price"`
+	StockTotal    int    `json:"stockTotal"`
+	StockReserved int    `json:"stockReserved"`
+	DesignAssetID int    `json:"designAssetId"`
+	// Design asset information
+	Description    string `json:"description"`
+	ColorPrimary   string `json:"colorPrimary"`
+	ColorSecondary string `json:"colorSecondary"`
+	HoodieType     string `json:"hoodieType"`
+	ImageType      string `json:"imageType"`
+	DecoID         string `json:"decoId"`
+	DecoBase       string `json:"decoBase"`
+	// Image endpoints
+	ImageUrlThumb  string `json:"imageUrlThumb"`
+	ImageUrlMedium string `json:"imageUrlMedium"`
+}
+
+// ReservedOrderLineWithItem represents a line item with complete item and design asset information
+type ReservedOrderLineWithItem struct {
+	ID             int64        `json:"id"`
+	ReservedOrderID int64       `json:"reservedOrderId"`
+	ItemID         int64        `json:"itemId"`
+	Qty            int          `json:"qty"`
+	UnitPrice      int64        `json:"unitPrice"`
+	CreatedAt      string       `json:"createdAt"`
+	Item           ItemFullInfo `json:"item"`
+}
+
+// ReservedOrderWithFullItems represents a reserved order with complete item information
+type ReservedOrderWithFullItems struct {
+	ReservedOrder
+	Lines []ReservedOrderLineWithItem `json:"lines"`
+	Total int64                        `json:"total"` // Sum of qty * unit_price for all lines
+}
+
+// SeparatedCartsResponse represents the response for separated carts endpoint
+// Example response:
+// {
+//   "carts": [
+//     {
+//       "id": 1,
+//       "status": "reserved",
+//       "assignedTo": "Erika",
+//       "orderType": "detal",
+//       "customerName": "Juan Pérez",
+//       "customerPhone": "+1234567890",
+//       "notes": "Cliente VIP",
+//       "createdAt": "2024-01-15T10:30:00Z",
+//       "updatedAt": "2024-01-15T10:30:00Z",
+//       "lines": [
+//         {
+//           "id": 1,
+//           "reservedOrderId": 1,
+//           "itemId": 123,
+//           "qty": 2,
+//           "unitPrice": 50000,
+//           "createdAt": "2024-01-15T10:30:00Z",
+//           "item": {
+//             "id": 123,
+//             "sku": "MN_ABC123",
+//             "size": "MN",
+//             "price": 50000,
+//             "stockTotal": 10,
+//             "stockReserved": 2,
+//             "designAssetId": 45,
+//             "description": "Hoodie con diseño especial",
+//             "colorPrimary": "BL",
+//             "colorSecondary": "NG",
+//             "hoodieType": "HO",
+//             "imageType": "FR",
+//             "decoId": "123",
+//             "decoBase": "BA",
+//             "imageUrlThumb": "/admin/design-assets/pending/45/image?size=thumb",
+//             "imageUrlMedium": "/admin/design-assets/pending/45/image?size=medium"
+//           }
+//         }
+//       ],
+//       "total": 100000
+//     }
+//   ]
+// }
+type SeparatedCartsResponse struct {
+	Carts []ReservedOrderWithFullItems `json:"carts"`
+}
+

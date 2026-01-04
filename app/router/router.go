@@ -82,6 +82,9 @@ func SetupRoutes(controllers *Controllers) {
 		}
 	})
 
+	// Get separated carts with full item information
+	http.HandleFunc("/admin/reserved-orders/separated", controllers.ReservedOrder.GetSeparatedCarts)
+
 	// Reserved order actions (must be before the generic /:id route)
 	http.HandleFunc("/admin/reserved-orders/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/admin/reserved-orders/")

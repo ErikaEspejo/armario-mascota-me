@@ -469,3 +469,90 @@ func (c *ReservedOrderController) CompleteOrder(w http.ResponseWriter, r *http.R
 	}
 }
 
+// GetSeparatedCarts handles GET /admin/reserved-orders/separated
+// Returns all reserved orders with complete item information including design asset details and image endpoints
+// Example response:
+// {
+//   "carts": [
+//     {
+//       "id": 1,
+//       "status": "reserved",
+//       "assignedTo": "Erika",
+//       "orderType": "detal",
+//       "customerName": "Juan Pérez",
+//       "customerPhone": "+1234567890",
+//       "notes": "Cliente VIP",
+//       "createdAt": "2024-01-15T10:30:00Z",
+//       "updatedAt": "2024-01-15T10:30:00Z",
+//       "lines": [
+//         {
+//           "id": 1,
+//           "reservedOrderId": 1,
+//           "itemId": 123,
+//           "qty": 2,
+//           "unitPrice": 50000,
+//           "createdAt": "2024-01-15T10:30:00Z",
+//           "item": {
+//             "id": 123,
+//             "sku": "MN_ABC123",
+//             "size": "MN",
+//             "price": 50000,
+//             "stockTotal": 10,
+//             "stockReserved": 2,
+//             "designAssetId": 45,
+//             "description": "Hoodie con diseño especial",
+//             "colorPrimary": "BL",
+//             "colorSecondary": "NG",
+//             "hoodieType": "HO",
+//             "imageType": "FR",
+//             "decoId": "123",
+//             "decoBase": "BA",
+//             "imageUrlThumb": "/admin/design-assets/pending/45/image?size=thumb",
+//             "imageUrlMedium": "/admin/design-assets/pending/45/image?size=medium"
+//           }
+//         }
+//       ],
+//       "total": 100000
+//     }
+//   ]
+// }
+func (c *ReservedOrderController) GetSeparatedCarts(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 GetSeparatedCarts: Received %s request to %s", r.Method, r.URL.Path)
+
+	if r.Method != http.MethodGet {
+		log.Printf("❌ GetSeparatedCarts: Method not allowed: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := context.Background()
+	carts, err := c.repository.GetAllWithFullItems(ctx)
+	if err != nil {
+		log.Printf("❌ GetSeparatedCarts: Error fetching carts: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to fetch carts: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Build image endpoints for each item
+	for i := range carts {
+		for j := range carts[i].Lines {
+			designAssetID := carts[i].Lines[j].Item.DesignAssetID
+			carts[i].Lines[j].Item.ImageUrlThumb = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", designAssetID)
+			carts[i].Lines[j].Item.ImageUrlMedium = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=medium", designAssetID)
+		}
+	}
+
+	log.Printf("✅ GetSeparatedCarts: Successfully fetched %d carts", len(carts))
+
+	response := models.SeparatedCartsResponse{
+		Carts: carts,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("❌ GetSeparatedCarts: Error encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
