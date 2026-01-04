@@ -37,3 +37,10 @@ type ReservedOrderRepositoryInterface interface {
 	Complete(ctx context.Context, id int64) (*models.ReservedOrder, error)
 	GetAllWithFullItems(ctx context.Context, status *string) ([]models.ReservedOrderWithFullItems, error)
 }
+
+// SaleRepositoryInterface defines the contract for sale repository operations
+type SaleRepositoryInterface interface {
+	Sell(ctx context.Context, reservedOrderID int64, req *models.SellRequest) (*models.Sale, error)
+	GetByID(ctx context.Context, saleID int64) (*models.SaleDetailResponse, error)
+	List(ctx context.Context, from, to *string) ([]models.SaleListItem, error)
+}

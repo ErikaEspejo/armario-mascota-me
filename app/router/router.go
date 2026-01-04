@@ -11,6 +11,7 @@ type Controllers struct {
 	DesignAsset   *controller.DesignAssetController
 	Item          *controller.ItemController
 	ReservedOrder *controller.ReservedOrderController
+	Sale          *controller.SaleController
 }
 
 // pingHandler handles GET /ping
@@ -98,6 +99,10 @@ func SetupRoutes(controllers *Controllers) {
 			controllers.ReservedOrder.CompleteOrder(w, r)
 			return
 		}
+		if strings.HasSuffix(path, "/sell") {
+			controllers.Sale.Sell(w, r)
+			return
+		}
 		// Handle DELETE /admin/reserved-orders/:orderId/items/:itemId
 		if strings.Contains(path, "/items/") && r.Method == http.MethodDelete {
 			controllers.ReservedOrder.RemoveItem(w, r)
@@ -128,5 +133,24 @@ func SetupRoutes(controllers *Controllers) {
 		
 		// Method not allowed
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	// Sales routes
+	// List sales
+	http.HandleFunc("/admin/sales", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			controllers.Sale.ListSales(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Get sale by ID
+	http.HandleFunc("/admin/sales/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			controllers.Sale.GetSale(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 }

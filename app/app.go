@@ -51,6 +51,7 @@ func Initialize() error {
 	designAssetRepo := repository.NewDesignAssetRepository()
 	itemRepo := repository.NewItemRepository()
 	reservedOrderRepo := repository.NewReservedOrderRepository()
+	saleRepo := repository.NewSaleRepository()
 
 	// Initialize sync service
 	syncService := service.NewSyncService(driveService, designAssetRepo)
@@ -60,6 +61,7 @@ func Initialize() error {
 		DesignAsset:   controller.NewDesignAssetController(syncService, designAssetRepo, driveService),
 		Item:          controller.NewItemController(itemRepo),
 		ReservedOrder: controller.NewReservedOrderController(reservedOrderRepo),
+		Sale:          controller.NewSaleController(saleRepo),
 	}
 
 	// Setup routes using standard http router
