@@ -104,20 +104,42 @@ type UpdateReservedOrderRequest struct {
 //   "lines": [
 //     {
 //       "id": 1,
+//       "reservedOrderId": 1,
 //       "itemId": 123,
-//       "itemSku": "MN_ABC123",
-//       "itemSize": "MN",
 //       "qty": 2,
 //       "unitPrice": 50000,
-//       "createdAt": "2024-01-15T10:30:00Z"
+//       "createdAt": "2024-01-15T10:30:00Z",
+//       "item": {
+//         "id": 123,
+//         "sku": "MN_ABC123",
+//         "size": "MN",
+//         "price": 50000,
+//         "stockTotal": 10,
+//         "stockReserved": 2,
+//         "designAssetId": 45,
+//         "description": "Hoodie con diseño especial",
+//         "colorPrimary": "BL",
+//         "colorSecondary": "NG",
+//         "hoodieType": "BE",
+//         "imageType": "IT",
+//         "decoId": "123",
+//         "decoBase": "C",
+//         "colorPrimaryLabel": "negro",
+//         "colorSecondaryLabel": "azul cielo",
+//         "hoodieTypeLabel": "buso tipo esqueleto",
+//         "imageTypeLabel": "buso pequeño (tallas mini - intermedio)",
+//         "decoBaseLabel": "Círculo",
+//         "imageUrlThumb": "/admin/design-assets/pending/45/image?size=thumb",
+//         "imageUrlMedium": "/admin/design-assets/pending/45/image?size=medium"
+//       }
 //     }
 //   ],
 //   "total": 100000
 // }
 type ReservedOrderResponse struct {
 	ReservedOrder
-	Lines []ReservedOrderLine `json:"lines"`
-	Total int64               `json:"total"` // Sum of qty * unit_price for all lines
+	Lines []ReservedOrderLineWithItem `json:"lines"`
+	Total int64                       `json:"total"` // Sum of qty * unit_price for all lines
 }
 
 // ReservedOrderListItem represents a reserved order in a list response

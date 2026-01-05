@@ -578,6 +578,7 @@ func (c *ReservedOrderController) UpdateItemQuantity(w http.ResponseWriter, r *h
 //   "id": 1,
 //   "status": "reserved",
 //   "assignedTo": "Erika",
+//   "orderType": "detal",
 //   "customerName": "Juan Pérez",
 //   "customerPhone": "+1234567890",
 //   "notes": "Cliente VIP",
@@ -588,12 +589,32 @@ func (c *ReservedOrderController) UpdateItemQuantity(w http.ResponseWriter, r *h
 //       "id": 1,
 //       "reservedOrderId": 1,
 //       "itemId": 123,
-//       "itemSku": "MN_ABC123",
-//       "itemSize": "MN",
 //       "qty": 2,
 //       "unitPrice": 50000,
-//       "itemPrice": 50000,
-//       "createdAt": "2024-01-15T10:30:00Z"
+//       "createdAt": "2024-01-15T10:30:00Z",
+//       "item": {
+//         "id": 123,
+//         "sku": "MN_ABC123",
+//         "size": "MN",
+//         "price": 50000,
+//         "stockTotal": 10,
+//         "stockReserved": 2,
+//         "designAssetId": 45,
+//         "description": "Hoodie con diseño especial",
+//         "colorPrimary": "BL",
+//         "colorSecondary": "NG",
+//         "hoodieType": "BE",
+//         "imageType": "IT",
+//         "decoId": "123",
+//         "decoBase": "C",
+//         "colorPrimaryLabel": "negro",
+//         "colorSecondaryLabel": "azul cielo",
+//         "hoodieTypeLabel": "buso tipo esqueleto",
+//         "imageTypeLabel": "buso pequeño (tallas mini - intermedio)",
+//         "decoBaseLabel": "Círculo",
+//         "imageUrlThumb": "/admin/design-assets/pending/45/image?size=thumb",
+//         "imageUrlMedium": "/admin/design-assets/pending/45/image?size=medium"
+//       }
 //     }
 //   ],
 //   "total": 100000
@@ -638,6 +659,23 @@ func (c *ReservedOrderController) GetOrder(w http.ResponseWriter, r *http.Reques
 		}
 		http.Error(w, fmt.Sprintf("Failed to fetch order: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Build image endpoints and apply mappings for readable labels
+	for i := range order.Lines {
+		item := &order.Lines[i].Item
+		designAssetID := item.DesignAssetID
+		
+		// Build image endpoints
+		item.ImageUrlThumb = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", designAssetID)
+		item.ImageUrlMedium = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=medium", designAssetID)
+		
+		// Apply mappings for readable labels
+		item.ColorPrimaryLabel = utils.MapCodeToColor(item.ColorPrimary)
+		item.ColorSecondaryLabel = utils.MapCodeToColor(item.ColorSecondary)
+		item.HoodieTypeLabel = utils.MapCodeToHoodieType(item.HoodieType)
+		item.ImageTypeLabel = utils.MapCodeToImageType(item.ImageType)
+		item.DecoBaseLabel = utils.MapCodeToDecoBase(item.DecoBase)
 	}
 
 	log.Printf("✅ GetOrder: Successfully fetched order id=%d", orderID)
