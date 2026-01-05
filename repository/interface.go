@@ -48,4 +48,7 @@ type SaleRepositoryInterface interface {
 // FinanceTransactionRepositoryInterface defines the contract for finance transaction repository operations
 type FinanceTransactionRepositoryInterface interface {
 	Create(ctx context.Context, req *models.CreateFinanceTransactionRequest) (*models.FinanceTransaction, error)
+	List(ctx context.Context, req *models.FinanceTransactionListRequest) (*models.FinanceTransactionListResponse, error)
+	Summary(ctx context.Context, from, to *string) (*models.FinanceSummaryResponse, error)
+	Dashboard(ctx context.Context, req *models.FinanceDashboardRequest) (*models.FinanceDashboardResponse, error)
 }

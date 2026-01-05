@@ -155,11 +155,31 @@ func SetupRoutes(controllers *Controllers) {
 		}
 	})
 
-	// Finance transactions routes
-	// Create finance transaction
-	http.HandleFunc("/admin/finance-transactions", func(w http.ResponseWriter, r *http.Request) {
+	// Finance routes
+	// Finance transactions - handles both POST (create) and GET (list)
+	http.HandleFunc("/admin/finance/transactions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			controllers.FinanceTransaction.Create(w, r)
+		} else if r.Method == http.MethodGet {
+			controllers.FinanceTransaction.List(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Finance summary
+	http.HandleFunc("/admin/finance/summary", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			controllers.FinanceTransaction.Summary(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Finance dashboard
+	http.HandleFunc("/admin/finance/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			controllers.FinanceTransaction.Dashboard(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}

@@ -193,8 +193,8 @@ func (r *SaleRepository) Sell(ctx context.Context, reservedOrderID int64, req *m
 
 	// Insert into finance_transactions
 	queryInsertTransaction := `
-		INSERT INTO finance_transactions (type, source, source_id, occurred_at, amount, destination, category, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO finance_transactions (type, source, source_id, occurred_at, amount, destination, category, counterparty, notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 	_, err = tx.ExecContext(ctx, queryInsertTransaction,
 		"income",
@@ -204,6 +204,7 @@ func (r *SaleRepository) Sell(ctx context.Context, reservedOrderID int64, req *m
 		req.AmountPaid,
 		req.PaymentDestination,
 		"venta",
+		sql.NullString{}, // counterparty is NULL for sale transactions
 		sql.NullString{String: req.Notes, Valid: req.Notes != ""},
 	)
 	if err != nil {
