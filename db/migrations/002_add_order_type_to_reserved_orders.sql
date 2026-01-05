@@ -9,7 +9,7 @@ BEGIN
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'reserved_orders' AND column_name = 'order_type'
     ) THEN
-        ALTER TABLE reserved_orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'retail';
+        ALTER TABLE reserved_orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'detal';
         -- Remove default after adding column (for future inserts)
         ALTER TABLE reserved_orders ALTER COLUMN order_type DROP DEFAULT;
     END IF;

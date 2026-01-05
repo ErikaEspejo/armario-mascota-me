@@ -44,3 +44,8 @@ type SaleRepositoryInterface interface {
 	GetByID(ctx context.Context, saleID int64) (*models.SaleDetailResponse, error)
 	List(ctx context.Context, from, to *string) ([]models.SaleListItem, error)
 }
+
+// FinanceTransactionRepositoryInterface defines the contract for finance transaction repository operations
+type FinanceTransactionRepositoryInterface interface {
+	Create(ctx context.Context, req *models.CreateFinanceTransactionRequest) (*models.FinanceTransaction, error)
+}

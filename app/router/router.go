@@ -8,10 +8,11 @@ import (
 )
 
 type Controllers struct {
-	DesignAsset   *controller.DesignAssetController
-	Item          *controller.ItemController
-	ReservedOrder *controller.ReservedOrderController
-	Sale          *controller.SaleController
+	DesignAsset        *controller.DesignAssetController
+	Item               *controller.ItemController
+	ReservedOrder      *controller.ReservedOrderController
+	Sale               *controller.SaleController
+	FinanceTransaction *controller.FinanceTransactionController
 }
 
 // pingHandler handles GET /ping
@@ -149,6 +150,16 @@ func SetupRoutes(controllers *Controllers) {
 	http.HandleFunc("/admin/sales/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			controllers.Sale.GetSale(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Finance transactions routes
+	// Create finance transaction
+	http.HandleFunc("/admin/finance-transactions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			controllers.FinanceTransaction.Create(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
