@@ -12,3 +12,4 @@ type DesignAssetFullUpdateRequest struct {
 	HasHighlights  bool   `json:"hasHighlights"`
 }
 
+

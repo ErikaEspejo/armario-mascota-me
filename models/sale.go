@@ -95,3 +95,4 @@ type SaleDetailResponse struct {
 	Order *ReservedOrderResponse `json:"order"`
 }
 
+

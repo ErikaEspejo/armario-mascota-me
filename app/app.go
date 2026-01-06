@@ -53,9 +53,21 @@ func Initialize() error {
 	reservedOrderRepo := repository.NewReservedOrderRepository()
 	saleRepo := repository.NewSaleRepository()
 	financeTransactionRepo := repository.NewFinanceTransactionRepository()
+	catalogRepo := repository.NewCatalogRepository()
 
 	// Initialize sync service
 	syncService := service.NewSyncService(driveService, designAssetRepo)
+
+	// Get base URL for catalog service (for image fetching)
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		// Check if running in Docker
+		if os.Getenv("DOCKER_ENV") == "true" {
+			baseURL = "http://host.docker.internal:8080"
+		} else {
+			baseURL = "http://localhost:8080"
+		}
+	}
 
 	// Create controllers
 	controllers := &router.Controllers{
@@ -64,6 +76,7 @@ func Initialize() error {
 		ReservedOrder:      controller.NewReservedOrderController(reservedOrderRepo),
 		Sale:               controller.NewSaleController(saleRepo),
 		FinanceTransaction: controller.NewFinanceTransactionController(financeTransactionRepo),
+		Catalog:            controller.NewCatalogController(catalogRepo, designAssetRepo, driveService, baseURL),
 	}
 
 	// Setup routes using standard http router

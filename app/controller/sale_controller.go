@@ -285,3 +285,4 @@ func (c *SaleController) GetSale(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+

@@ -39,3 +39,4 @@ CREATE TABLE IF NOT EXISTS finance_transactions (
 CREATE INDEX IF NOT EXISTS idx_finance_transactions_occurred_at ON finance_transactions(occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_finance_transactions_source_source_id ON finance_transactions(source, source_id);
 
+

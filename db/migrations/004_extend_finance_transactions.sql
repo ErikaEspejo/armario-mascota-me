@@ -47,3 +47,4 @@ ON finance_transactions(destination, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_finance_transactions_category_occurred_at 
 ON finance_transactions(category, occurred_at DESC);
 
+

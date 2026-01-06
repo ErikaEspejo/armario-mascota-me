@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catálogo - Talla {{.Size}}</title>
+    <style>
+        @page {
+            size: 210mm 350mm;
+            margin: 0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #ffffff;
+            color: #333;
+            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+            width: 210mm;
+            height: 350mm;
+            min-height: 350mm;
+            overflow: hidden;
+        }
+
+        .page {
+            width: 210mm;
+            height: 350mm;
+            min-height: 350mm;
+            max-height: 350mm;
+            padding: 0;
+            background-color: #ffffff;
+            page-break-after: always;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        
+        .page-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 210mm;
+            height: 350mm;
+            z-index: 0;
+            pointer-events: none;
+            object-fit: cover;
+            display: block !important;
+        }
+
+        .page:last-child {
+            page-break-after: auto;
+        }
+
+        .page-content {
+            position: relative;
+            z-index: 1;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .page-header {
+            position: relative;
+            margin-bottom: 0;
+            z-index: 10;
+            height: 25mm;
+            width: 100%;
+        }
+
+        .page-header .logo {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 25mm;
+            height: 25mm;
+            object-fit: contain;
+            z-index: 11;
+            display: block !important;
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8mm;
+            flex: 1;
+            width: 100%;
+            align-content: start;
+            position: relative;
+            z-index: 1;
+        }
+
+        .product-card {
+            background: transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            width: 100%;
+            min-height: 0;
+        }
+
+        .product-image {
+            width: 100%;
+            height: 70mm;
+            object-fit: contain;
+            margin-bottom: 2mm;
+            background: transparent;
+        }
+
+        .product-info {
+            width: 100%;
+            text-align: center;
+            font-size: 10pt;
+            line-height: 1.4;
+        }
+
+        .product-info .color {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 11pt;
+            margin-bottom: 0;
+            line-height: 1.3;
+        }
+
+        .product-info .type {
+            color: #555;
+            font-size: 10pt;
+            margin-bottom: 1mm;
+            line-height: 1.3;
+        }
+
+        .product-info .design-id {
+            color: #555;
+            font-size: 8pt;
+            margin-bottom: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.2;
+            word-break: break-all;
+        }
+
+        .product-info .quantity {
+            color: #27ae60;
+            font-weight: 600;
+            font-size: 10pt;
+            margin-top: 0;
+            line-height: 1.3;
+        }
+
+        .quantity-label {
+            font-weight: normal;
+        }
+
+        @media print {
+            body {
+                background: white;
+            }
+            .page {
+                page-break-after: always;
+            }
+        }
+    </style>
+</head>
+<body>
+    {{range $page := .Pages}}
+    <div class="page">
+        {{if $.BackgroundURL}}
+        <img src="{{$.BackgroundURL}}" alt="Background" class="page-background">
+        {{end}}
+        <div class="page-content">
+            <div class="page-header">
+                {{if $.LogoURL}}
+                <img src="{{$.LogoURL}}" alt="Logo" class="logo">
+                {{end}}
+            </div>
+            <div class="products-grid">
+            {{range $item := $page}}
+            <div class="product-card">
+                {{if $item.ImageBase64}}
+                <img src="data:image/jpeg;base64,{{$item.ImageBase64}}" alt="Producto" class="product-image">
+                {{else if $item.ImageURL}}
+                <img src="{{$item.ImageURL}}" alt="Producto" class="product-image">
+                {{else}}
+                <div class="product-image" style="display: flex; align-items: center; justify-content: center; color: #ccc;">
+                    Sin imagen
+                </div>
+                {{end}}
+                <div class="product-info">
+                    <div class="color">
+                        {{if $item.ColorPrimaryName}}
+                            {{$item.ColorPrimaryName}}
+                        {{else}}
+                            -
+                        {{end}}
+                    </div>
+                    <div class="type">{{$item.HoodieTypeName}}</div>
+                    <div class="design-id">{{$item.SKU}}</div>
+                    <div class="quantity">
+                        <span class="quantity-label">Disponibles: </span>{{$item.AvailableQty}}
+                    </div>
+                </div>
+            </div>
+            {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+</body>
+</html>
+

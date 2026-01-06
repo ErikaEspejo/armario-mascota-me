@@ -2,6 +2,8 @@ package router
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"armario-mascota-me/app/controller"
@@ -13,6 +15,7 @@ type Controllers struct {
 	ReservedOrder      *controller.ReservedOrderController
 	Sale               *controller.SaleController
 	FinanceTransaction *controller.FinanceTransactionController
+	Catalog            *controller.CatalogController
 }
 
 // pingHandler handles GET /ping
@@ -26,9 +29,52 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
+// serveStaticFiles serves static files from the static directory
+func serveStaticFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get the file path from URL (remove /static prefix)
+	path := strings.TrimPrefix(r.URL.Path, "/static/")
+	if path == "" || strings.Contains(path, "..") {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
+	// Build full file path
+	filePath := filepath.Join("static", path)
+
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+
+	// Determine content type based on file extension
+	contentType := "application/octet-stream"
+	if strings.HasSuffix(path, ".png") {
+		contentType = "image/png"
+	} else if strings.HasSuffix(path, ".jpg") || strings.HasSuffix(path, ".jpeg") {
+		contentType = "image/jpeg"
+	} else if strings.HasSuffix(path, ".gif") {
+		contentType = "image/gif"
+	} else if strings.HasSuffix(path, ".svg") {
+		contentType = "image/svg+xml"
+	}
+
+	// Serve the file
+	w.Header().Set("Content-Type", contentType)
+	http.ServeFile(w, r, filePath)
+}
+
 func SetupRoutes(controllers *Controllers) {
 	// Ping endpoint
 	http.HandleFunc("/ping", pingHandler)
+
+	// Static files
+	http.HandleFunc("/static/", serveStaticFiles)
 
 	// Design assets routes
 	http.HandleFunc("/admin/design-assets/load", controllers.DesignAsset.LoadImages)
@@ -71,6 +117,10 @@ func SetupRoutes(controllers *Controllers) {
 	
 	// Filter items
 	http.HandleFunc("/admin/items/filter", controllers.Item.FilterItems)
+
+	// Catalog routes
+	http.HandleFunc("/admin/catalog", controllers.Catalog.GenerateCatalog)
+	http.HandleFunc("/admin/catalog/render", controllers.Catalog.RenderCatalog)
 
 	// Reserved orders routes
 	// Create reserved order

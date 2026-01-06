@@ -52,3 +52,8 @@ type FinanceTransactionRepositoryInterface interface {
 	Summary(ctx context.Context, from, to *string) (*models.FinanceSummaryResponse, error)
 	Dashboard(ctx context.Context, req *models.FinanceDashboardRequest) (*models.FinanceDashboardResponse, error)
 }
+
+// CatalogRepositoryInterface defines the contract for catalog repository operations
+type CatalogRepositoryInterface interface {
+	GetItemsBySizeForCatalog(ctx context.Context, size string) ([]models.CatalogItem, error)
+}
