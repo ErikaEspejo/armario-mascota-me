@@ -8,6 +8,7 @@ import (
 	"armario-mascota-me/app/controller"
 	"armario-mascota-me/app/router"
 	"armario-mascota-me/db"
+	"armario-mascota-me/pricing"
 	"armario-mascota-me/repository"
 	"armario-mascota-me/service"
 )
@@ -57,6 +58,15 @@ func Initialize() error {
 
 	// Initialize sync service
 	syncService := service.NewSyncService(driveService, designAssetRepo)
+
+	// Initialize pricing engine
+	pricingConfigPath := os.Getenv("PRICING_CONFIG_PATH")
+	if pricingConfigPath == "" {
+		pricingConfigPath = "configs/pricing.json"
+	}
+	if _, err := pricing.NewEngine(pricingConfigPath); err != nil {
+		return fmt.Errorf("failed to initialize pricing engine: %w", err)
+	}
 
 	// Get base URL for catalog service (for image fetching)
 	baseURL := os.Getenv("BASE_URL")

@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"armario-mascota-me/db"
 	"armario-mascota-me/models"
+	"armario-mascota-me/pricing"
 )
 
 // SaleRepository handles database operations for sales
@@ -105,6 +107,71 @@ func (r *SaleRepository) Sell(ctx context.Context, reservedOrderID int64, req *m
 		return nil, fmt.Errorf("failed to iterate order lines: %w", err)
 	}
 
+	// Calculate final pricing using pricing engine BEFORE completing the sale
+	// This will freeze the snapshot by updating unit_price in reserved_order_lines
+	pricingEngine := pricing.GetEngine()
+	var calculatedTotal int64
+	var calculatedOrderType string
+
+	if pricingEngine != nil {
+		log.Printf("💰 Sell: Calculating final pricing for order %d", reservedOrderID)
+		
+		// Note: We need to use a context that can work with the transaction
+		// Since pricing engine uses db.DB directly, we'll calculate outside transaction first
+		// then update within transaction
+		breakdown, err := pricingEngine.CalculateOrderPricing(ctx, reservedOrderID)
+		if err != nil {
+			log.Printf("❌ Sell: Error calculating pricing: %v", err)
+			return nil, fmt.Errorf("failed to calculate pricing: %w", err)
+		}
+
+		calculatedTotal = breakdown.Total
+		calculatedOrderType = breakdown.OrderType
+		log.Printf("💰 Sell: Calculated total=%d, orderType=%s", calculatedTotal, calculatedOrderType)
+
+		// Freeze snapshot: Update unit_price in reserved_order_lines with calculated prices
+		// Use effective unit price (lineTotal / qty) to include bundle contributions
+		for _, pricingLine := range breakdown.Lines {
+			// Calculate effective unit price (includes bundle contributions)
+			effectiveUnitPrice := pricingLine.UnitPrice
+			if pricingLine.Qty > 0 {
+				effectiveUnitPrice = pricingLine.LineTotal / int64(pricingLine.Qty)
+			}
+			
+			queryUpdatePrice := `
+				UPDATE reserved_order_lines
+				SET unit_price = $1
+				WHERE id = $2
+			`
+			_, err = tx.ExecContext(ctx, queryUpdatePrice, effectiveUnitPrice, pricingLine.LineID)
+			if err != nil {
+				log.Printf("❌ Sell: Error freezing price for line %d: %v", pricingLine.LineID, err)
+				return nil, fmt.Errorf("failed to freeze pricing snapshot: %w", err)
+			}
+			log.Printf("💰 Sell: Frozen line %d: qty=%d, lineTotal=%d, effectiveUnitPrice=%d", 
+				pricingLine.LineID, pricingLine.Qty, pricingLine.LineTotal, effectiveUnitPrice)
+		}
+		log.Printf("✅ Sell: Frozen pricing snapshot for all lines")
+
+		// Update order_type in reserved_orders
+		queryUpdateOrderType := `
+			UPDATE reserved_orders
+			SET order_type = $1
+			WHERE id = $2
+		`
+		_, err = tx.ExecContext(ctx, queryUpdateOrderType, strings.ToLower(calculatedOrderType), reservedOrderID)
+		if err != nil {
+			log.Printf("⚠️ Sell: Failed to update order_type: %v", err)
+			// Continue anyway - pricing is more important
+		} else {
+			log.Printf("✅ Sell: Updated order_type to %s", calculatedOrderType)
+		}
+	} else {
+		log.Printf("⚠️ Sell: Pricing engine not initialized, using request amount_paid")
+		calculatedTotal = req.AmountPaid
+		calculatedOrderType = "detal" // Default
+	}
+
 	// Process each line: validate stock_reserved and deduct stock_total and stock_reserved
 	for _, line := range lines {
 		// Lock item for update and validate stock_reserved
@@ -158,11 +225,18 @@ func (r *SaleRepository) Sell(ctx context.Context, reservedOrderID int64, req *m
 	var sale models.Sale
 	var saleCustomerName, saleNotes sql.NullString
 
+	// Use calculated total if pricing engine was used, otherwise use request amount_paid
+	amountPaid := req.AmountPaid
+	if pricingEngine != nil && calculatedTotal > 0 {
+		amountPaid = calculatedTotal
+		log.Printf("💰 Sell: Using calculated total %d for amount_paid (request had %d)", calculatedTotal, req.AmountPaid)
+	}
+
 	err = tx.QueryRowContext(ctx, queryInsertSale,
 		reservedOrderID,
 		soldAt,
 		sql.NullString{String: customerName, Valid: customerName != ""},
-		req.AmountPaid,
+		amountPaid,
 		req.PaymentMethod,
 		req.PaymentDestination,
 		"paid",
@@ -201,7 +275,7 @@ func (r *SaleRepository) Sell(ctx context.Context, reservedOrderID int64, req *m
 		"sale",
 		sale.ID,
 		soldAt,
-		req.AmountPaid,
+		amountPaid, // Use calculated amount_paid
 		req.PaymentDestination,
 		"venta",
 		sql.NullString{}, // counterparty is NULL for sale transactions

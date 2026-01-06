@@ -9,7 +9,7 @@ import (
 
 	"armario-mascota-me/db"
 	"armario-mascota-me/models"
-	"armario-mascota-me/utils"
+	"armario-mascota-me/pricing"
 )
 
 // ReservedOrderRepository handles database operations for reserved orders
@@ -155,15 +155,14 @@ func (r *ReservedOrderRepository) AddItem(ctx context.Context, orderID int64, it
 		return nil, fmt.Errorf("insufficient stock: available %d, requested %d", available, qty)
 	}
 
-	// Calculate price based on order type (retail or wholesale)
-	// Normalize size for price calculation
-	normalizedSize := utils.NormalizeSize(itemSize)
-	calculatedPrice := utils.CalculatePrice(hoodieType, normalizedSize, orderType)
-	log.Printf("💰 AddItem: Calculated price for order_type=%s, hoodie_type=%s, size=%s: %d cents (item base price: %d)", 
-		orderType, hoodieType, normalizedSize, calculatedPrice, itemPrice)
+	// NOTE: Pricing is NOT calculated here. Prices will be calculated dynamically when querying the order.
+	// Set unit_price to 0 as placeholder - it will be calculated on-read for "reserved" orders
+	// or frozen when completing the sale.
+	placeholderPrice := int64(0)
+	log.Printf("💰 AddItem: Not calculating price here - will be calculated on-read. Using placeholder price: %d", placeholderPrice)
 
 	// Upsert reserved_order_lines (if exists, add to qty; if not, create new)
-	// Use calculated price instead of item base price
+	// Use placeholder price (0) - pricing will be calculated dynamically
 	queryUpsertLine := `
 		INSERT INTO reserved_order_lines (reserved_order_id, item_id, qty, unit_price)
 		VALUES ($1, $2, $3, $4)
@@ -173,7 +172,7 @@ func (r *ReservedOrderRepository) AddItem(ctx context.Context, orderID int64, it
 	`
 
 	var line models.ReservedOrderLine
-	err = tx.QueryRowContext(ctx, queryUpsertLine, orderID, itemID, qty, calculatedPrice).Scan(
+	err = tx.QueryRowContext(ctx, queryUpsertLine, orderID, itemID, qty, placeholderPrice).Scan(
 		&line.ID,
 		&line.ReservedOrderID,
 		&line.ItemID,
@@ -314,12 +313,65 @@ func (r *ReservedOrderRepository) GetByID(ctx context.Context, id int64) (*model
 
 		line.Item = item
 		lines = append(lines, line)
-		total += int64(line.Qty) * line.UnitPrice
+		// For completed/canceled orders, use stored unit_price
+		// For reserved orders, pricing will be recalculated below
+		if order.Status != "reserved" {
+			total += int64(line.Qty) * line.UnitPrice
+		}
 	}
 
 	if err := rows.Err(); err != nil {
 		log.Printf("❌ GetByID: Error iterating lines: %v", err)
 		return nil, fmt.Errorf("failed to iterate order lines: %w", err)
+	}
+
+	// Calculate pricing based on order status
+	if order.Status == "reserved" {
+		// Calculate pricing dynamically using pricing engine
+		pricingEngine := pricing.GetEngine()
+		if pricingEngine == nil {
+			log.Printf("⚠️ GetByID: Pricing engine not initialized, using stored prices")
+			// Fallback to stored prices if engine not available
+			for _, line := range lines {
+				total += int64(line.Qty) * line.UnitPrice
+			}
+		} else {
+			// Calculate pricing breakdown
+			breakdown, err := pricingEngine.CalculateOrderPricing(ctx, id)
+			if err != nil {
+				log.Printf("❌ GetByID: Error calculating pricing: %v", err)
+				return nil, fmt.Errorf("failed to calculate pricing: %w", err)
+			}
+
+			// Update unit_price in lines based on breakdown
+			breakdownMap := make(map[int64]*models.PricingLine)
+			for i := range breakdown.Lines {
+				breakdownMap[breakdown.Lines[i].LineID] = &breakdown.Lines[i]
+			}
+
+			for i := range lines {
+				if pricingLine, exists := breakdownMap[lines[i].ID]; exists {
+					lines[i].UnitPrice = pricingLine.UnitPrice
+				}
+			}
+
+			total = breakdown.Total
+
+			// Update order_type if it changed
+			newOrderType := breakdown.OrderType
+			if strings.ToLower(order.OrderType) != strings.ToLower(newOrderType) {
+				log.Printf("🔄 GetByID: Updating order_type from %s to %s", order.OrderType, newOrderType)
+				if err := pricingEngine.UpdateOrderType(ctx, id, newOrderType); err != nil {
+					log.Printf("⚠️ GetByID: Failed to update order_type: %v", err)
+					// Continue anyway - pricing is more important
+				} else {
+					order.OrderType = newOrderType
+				}
+			}
+		}
+	} else {
+		// For completed/canceled orders, use stored prices (already calculated above)
+		log.Printf("📋 GetByID: Order status=%s, using stored prices", order.Status)
 	}
 
 	response := &models.ReservedOrderResponse{
@@ -328,7 +380,7 @@ func (r *ReservedOrderRepository) GetByID(ctx context.Context, id int64) (*model
 		Total:         total,
 	}
 
-	log.Printf("✅ GetByID: Successfully fetched order id=%d with %d lines", id, len(lines))
+	log.Printf("✅ GetByID: Successfully fetched order id=%d with %d lines, total=%d", id, len(lines), total)
 	return response, nil
 }
 
@@ -795,13 +847,69 @@ func (r *ReservedOrderRepository) GetAllWithFullItems(ctx context.Context, statu
 
 			line.Item = item
 			lines = append(lines, line)
-			total += int64(line.Qty) * line.UnitPrice
+			// For completed/canceled orders, use stored unit_price
+			// For reserved orders, pricing will be recalculated below
+			if order.Status != "reserved" {
+				total += int64(line.Qty) * line.UnitPrice
+			}
 		}
 		lineRows.Close()
 
 		if err := lineRows.Err(); err != nil {
 			log.Printf("❌ GetAllWithFullItems: Error iterating lines: %v", err)
 			continue
+		}
+
+		// Calculate pricing based on order status
+		if order.Status == "reserved" {
+			// Calculate pricing dynamically using pricing engine
+			pricingEngine := pricing.GetEngine()
+			if pricingEngine == nil {
+				log.Printf("⚠️ GetAllWithFullItems: Pricing engine not initialized, using stored prices")
+				// Fallback to stored prices if engine not available
+				for _, line := range lines {
+					total += int64(line.Qty) * line.UnitPrice
+				}
+			} else {
+				// Calculate pricing breakdown
+				breakdown, err := pricingEngine.CalculateOrderPricing(ctx, order.ID)
+				if err != nil {
+					log.Printf("❌ GetAllWithFullItems: Error calculating pricing for order %d: %v", order.ID, err)
+					// Fallback to stored prices on error
+					for _, line := range lines {
+						total += int64(line.Qty) * line.UnitPrice
+					}
+				} else {
+					// Update unit_price in lines based on breakdown
+					breakdownMap := make(map[int64]*models.PricingLine)
+					for i := range breakdown.Lines {
+						breakdownMap[breakdown.Lines[i].LineID] = &breakdown.Lines[i]
+					}
+
+					for i := range lines {
+						if pricingLine, exists := breakdownMap[lines[i].ID]; exists {
+							lines[i].UnitPrice = pricingLine.UnitPrice
+						}
+					}
+
+					total = breakdown.Total
+
+					// Update order_type if it changed
+					newOrderType := breakdown.OrderType
+					if strings.ToLower(order.OrderType) != strings.ToLower(newOrderType) {
+						log.Printf("🔄 GetAllWithFullItems: Updating order_type from %s to %s for order %d", order.OrderType, newOrderType, order.ID)
+						if err := pricingEngine.UpdateOrderType(ctx, order.ID, newOrderType); err != nil {
+							log.Printf("⚠️ GetAllWithFullItems: Failed to update order_type: %v", err)
+							// Continue anyway - pricing is more important
+						} else {
+							order.OrderType = newOrderType
+						}
+					}
+				}
+			}
+		} else {
+			// For completed/canceled orders, use stored prices (already calculated above)
+			log.Printf("📋 GetAllWithFullItems: Order %d status=%s, using stored prices", order.ID, order.Status)
 		}
 
 		result = append(result, models.ReservedOrderWithFullItems{
@@ -1284,16 +1392,17 @@ func (r *ReservedOrderRepository) UpdateOrder(ctx context.Context, req *models.U
 				return nil, fmt.Errorf("insufficient stock: available %d, requested %d", available, reqLine.Qty)
 			}
 
-			// Calculate price
-			normalizedSize := utils.NormalizeSize(itemSize)
-			calculatedPrice := utils.CalculatePrice(hoodieType, normalizedSize, req.OrderType)
+			// NOTE: Pricing is NOT calculated here. Prices will be calculated dynamically when querying the order.
+			// Set unit_price to 0 as placeholder - it will be calculated on-read for "reserved" orders
+			placeholderPrice := int64(0)
+			log.Printf("💰 UpdateOrder: Not calculating price here - will be calculated on-read. Using placeholder price: %d", placeholderPrice)
 
 			// Insert line
 			queryInsertLine := `
 				INSERT INTO reserved_order_lines (reserved_order_id, item_id, qty, unit_price)
 				VALUES ($1, $2, $3, $4)
 			`
-			_, err = tx.ExecContext(ctx, queryInsertLine, req.ID, itemID, reqLine.Qty, calculatedPrice)
+			_, err = tx.ExecContext(ctx, queryInsertLine, req.ID, itemID, reqLine.Qty, placeholderPrice)
 			if err != nil {
 				log.Printf("❌ UpdateOrder: Error inserting line: %v", err)
 				return nil, fmt.Errorf("failed to insert line: %w", err)

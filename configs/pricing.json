@@ -1,0 +1,134 @@
+{
+  "currency": "COP",
+  "groups": {
+    "BUSOS": {
+      "includeTypes": ["BU", "BE", "BC"],
+      "excludeTypes": ["IM", "PA"]
+    },
+    "CAMISETAS": {
+      "includeTypes": ["CA", "HW"]
+    }
+  },
+  "sizeBuckets": {
+    "XS": "XS_S_M",
+    "S": "XS_S_M",
+    "M": "XS_S_M",
+    "L": "L",
+    "XL": "XL",
+    "MN": "MINI_INTERMEDIO",
+    "IT": "MINI_INTERMEDIO"
+  },
+  "pricebook": {
+    "BUSOS": {
+      "XL": {
+        "retail": 22000,
+        "wholesale": 20000
+      },
+      "L": {
+        "retail": 15000,
+        "wholesale": 12500
+      },
+      "XS_S_M": {
+        "retail": 12000,
+        "wholesale": 9500
+      },
+      "MINI_INTERMEDIO": {
+        "retail": 8000,
+        "wholesale": 6500
+      }
+    },
+    "CAMISETAS": {
+      "XS_S_M": {
+        "retail": 10000,
+        "wholesale": 9000
+      },
+      "MINI_INTERMEDIO": {
+        "retail": 8000,
+        "wholesale": 6000
+      }
+    }
+  },
+  "rules": [
+    {
+      "id": "WHOLESALE_GLOBAL_6PLUS",
+      "name": "Mayorista global 6+ (override total)",
+      "active": true,
+      "priority": 1000,
+      "type": "wholesale_override",
+      "conditions": {
+        "minQty": 6,
+        "scope": "cart",
+        "appliesToGroups": ["BUSOS", "CAMISETAS"]
+      }
+    },
+    {
+      "id": "PROMO_2X_BUSOS_XS_S_M",
+      "name": "2x Busos XS/S/M",
+      "active": true,
+      "priority": 100,
+      "type": "bundle_fixed_total",
+      "conditions": {
+        "group": "BUSOS",
+        "sizes": ["XS", "S", "M"],
+        "requiredQty": 2,
+        "mixSizes": true,
+        "onlyIfCartQtyBelow": 6
+      },
+      "action": {
+        "bundleTotalPrice": 20000
+      }
+    },
+    {
+      "id": "PROMO_2X_BUSOS_MINI",
+      "name": "2x Busos Mini-Intermedio",
+      "active": true,
+      "priority": 100,
+      "type": "bundle_fixed_total",
+      "conditions": {
+        "group": "BUSOS",
+        "sizes": ["MN", "IT"],
+        "requiredQty": 2,
+        "mixSizes": false,
+        "onlyIfCartQtyBelow": 6
+      },
+      "action": {
+        "bundleTotalPrice": 14000
+      }
+    },
+    {
+      "id": "PROMO_2X_CAMISETAS_XS_S_M",
+      "name": "2x Camisetas XS/S/M",
+      "active": true,
+      "priority": 100,
+      "type": "bundle_fixed_total",
+      "conditions": {
+        "group": "CAMISETAS",
+        "sizes": ["XS", "S", "M"],
+        "requiredQty": 2,
+        "mixSizes": true,
+        "onlyIfCartQtyBelow": 6
+      },
+      "action": {
+        "bundleTotalPrice": 18000
+      }
+    },
+    {
+      "id": "PROMO_2X_CAMISETAS_MINI",
+      "name": "2x Camisetas Mini-Intermedio",
+      "active": true,
+      "priority": 100,
+      "type": "bundle_fixed_total",
+      "conditions": {
+        "group": "CAMISETAS",
+        "sizes": ["MN", "IT"],
+        "requiredQty": 2,
+        "mixSizes": false,
+        "onlyIfCartQtyBelow": 6
+      },
+      "action": {
+        "bundleTotalPrice": 14000
+      }
+    }
+  ]
+}
+
