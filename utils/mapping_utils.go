@@ -151,11 +151,69 @@ func MapCodeToHoodieType(code string) string {
 }
 
 // MapCodeToImageType maps image type codes back to their readable names
-// Input is normalized to uppercase before mapping
-// Returns lowercase readable name
+// Supports both old format (IT, DP, XL) and new format (ItMn, MnSML, etc.)
+// Input is normalized before mapping
+// Returns comma-separated readable names (e.g., "Intermedio,Mini")
 func MapCodeToImageType(code string) string {
-	codeUpper := strings.ToUpper(strings.TrimSpace(code))
+	codeTrimmed := strings.TrimSpace(code)
+	if codeTrimmed == "" {
+		return ""
+	}
 
+	// Check if code contains lowercase letters (indicates new format)
+	hasLowercase := false
+	for _, char := range codeTrimmed {
+		if char >= 'a' && char <= 'z' {
+			hasLowercase = true
+			break
+		}
+	}
+
+	// New format: parse concatenated codes (e.g., "ItMn", "MnSML")
+	if hasLowercase {
+		// Mapping from codes to readable names
+		codeToNameMap := map[string]string{
+			"Mn": "Mini",
+			"It": "Intermedio",
+			"X":  "XS",
+			"S":  "S",
+			"M":  "M",
+			"L":  "L",
+			"H":  "XL",
+		}
+
+		var result []string
+		remaining := codeTrimmed
+
+		// Try to match codes in order (longest first to avoid partial matches)
+		// Order matters: "Mn" must come before "M", "It" must come before any single char
+		codes := []string{"Mn", "It", "X", "S", "M", "L", "H"}
+		
+		for len(remaining) > 0 {
+			matched := false
+			for _, codeKey := range codes {
+				if strings.HasPrefix(remaining, codeKey) {
+					if name, exists := codeToNameMap[codeKey]; exists {
+						result = append(result, name)
+						remaining = remaining[len(codeKey):]
+						matched = true
+						break
+					}
+				}
+			}
+			if !matched {
+				// Skip unknown character
+				remaining = remaining[1:]
+			}
+		}
+
+		if len(result) > 0 {
+			return strings.Join(result, ",")
+		}
+	}
+
+	// Old format: check for old format codes (for backward compatibility)
+	codeUpper := strings.ToUpper(codeTrimmed)
 	codeToImageMap := map[string]string{
 		"IT": "buso pequeño (tallas mini - intermedio)",
 		"DP": "buso estándar (tallas xs - s - m - l)",
@@ -166,8 +224,8 @@ func MapCodeToImageType(code string) string {
 		return imageType
 	}
 
-	// If not found, return lowercase version of input
-	return strings.ToLower(codeUpper)
+	// If no matches found, return lowercase version of input
+	return strings.ToLower(codeTrimmed)
 }
 
 // MapCodeToDecoBase maps deco base codes back to their readable names

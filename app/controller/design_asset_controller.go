@@ -477,7 +477,7 @@ func (c *DesignAssetController) FilterDesignAssets(w http.ResponseWriter, r *htt
 		asset.ColorPrimary = utils.MapCodeToColor(asset.ColorPrimary)
 		asset.ColorSecondary = utils.MapCodeToColor(asset.ColorSecondary)
 		asset.HoodieType = utils.MapCodeToHoodieType(asset.HoodieType)
-		asset.ImageType = utils.MapCodeToImageType(asset.ImageType)
+		// imageType is kept as-is from database (no conversion)
 		asset.DecoBase = utils.MapCodeToDecoBase(asset.DecoBase)
 
 		// Construct URL to optimized image endpoint
