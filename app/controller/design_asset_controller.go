@@ -320,7 +320,7 @@ func (c *DesignAssetController) UpdateFullDesignAsset(w http.ResponseWriter, r *
 	colorPrimaryCode := utils.MapColorToCode(colorPrimary)
 	colorSecondaryCode := utils.MapColorToCode(colorSecondary)
 	hoodieTypeCode := utils.MapHoodieTypeToCode(hoodieType)
-	imageTypeCode := utils.MapImageTypeToCode(imageType)
+	imageTypeCode := utils.ParseImageTypeSizes(imageType)
 	
 	// Map decoBase values: N/A -> 0, Círculo -> C, Nube -> N
 	decoBaseMapped := decoBase

@@ -189,3 +189,57 @@ func MapCodeToDecoBase(code string) string {
 	// If not found, return uppercase version of input
 	return codeUpper
 }
+
+// ParseImageTypeSizes parses comma-separated size values and returns concatenated codes
+// Input format: "Intermedio,Mini,XS" or "Mini,S,M,L"
+// Returns: "ItMnX" or "MnSML"
+// Mapping:
+//   - Mini -> Mn
+//   - Intermedio -> It
+//   - XS -> X
+//   - S -> S
+//   - M -> M
+//   - L -> L
+//   - XL -> H
+func ParseImageTypeSizes(imageType string) string {
+	// Normalize input to lowercase and trim
+	imageTypeLower := strings.ToLower(strings.TrimSpace(imageType))
+	
+	// Split by comma
+	parts := strings.Split(imageTypeLower, ",")
+	
+	// Mapping from input values to codes
+	sizeMap := map[string]string{
+		"mini":       "Mn",
+		"intermedio": "It",
+		"xs":         "X",
+		"s":          "S",
+		"m":          "M",
+		"l":          "L",
+		"xl":         "H",
+	}
+	
+	// Track seen codes to avoid duplicates
+	seenCodes := make(map[string]bool)
+	var result strings.Builder
+	
+	// Process each part
+	for _, part := range parts {
+		partTrimmed := strings.TrimSpace(part)
+		if partTrimmed == "" {
+			continue
+		}
+		
+		// Get code from map
+		if code, exists := sizeMap[partTrimmed]; exists {
+			// Only add if not already seen
+			if !seenCodes[code] {
+				result.WriteString(code)
+				seenCodes[code] = true
+			}
+		}
+		// Unknown values are ignored
+	}
+	
+	return result.String()
+}
