@@ -30,6 +30,10 @@ DATABASE_URL=postgres://user:password@localhost:5432/armario_mascota?sslmode=dis
 # DB_PASSWORD=password
 # DB_NAME=armario_mascota
 # DB_SSLMODE=disable
+
+# Server Port (default: 8080)
+# Puedes especificar solo el número (ej: 3000) o con dos puntos (ej: :3000)
+PORT=8080
 ```
 
 ### Para Desarrollo Local
@@ -55,6 +59,7 @@ En producción, configura las variables de entorno directamente en el sistema o 
 export GOOGLE_APPLICATION_CREDENTIALS_JSON='{"type":"service_account",...}'
 export GOOGLE_DRIVE_FOLDER_ID=1TtK0fnadxl3r1-8iYlv2GFf5LgdKxmID
 export DATABASE_URL=postgres://user:password@host:port/dbname?sslmode=disable
+export PORT=8080
 export ENV=production
 
 # Opción 2: Path al archivo JSON (alternativa)

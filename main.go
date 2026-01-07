@@ -51,7 +51,12 @@ func main() {
 	defer db.CloseDB()
 
 	// Start server
-	port := ":8080"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8080"
+	} else if port[0] != ':' {
+		port = ":" + port
+	}
 	log.Printf("Server starting on port %s", port)
 	log.Printf("Load images endpoint: GET http://localhost%s/admin/design-assets/load?folderId=YOUR_FOLDER_ID", port)
 
