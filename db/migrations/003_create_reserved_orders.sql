@@ -1,4 +1,4 @@
--- Migration: Create reserved_orders and reserved_order_lines tables
+-- Migration: Create reserved_orders table
 -- Description: Tables for managing reserved orders (persistent carts) with stock reservation
 
 -- Table: reserved_orders
@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS reserved_orders (
     id BIGSERIAL PRIMARY KEY,
     status TEXT NOT NULL CHECK (status IN ('reserved', 'completed', 'canceled')),
     assigned_to TEXT NOT NULL,
-    order_type TEXT NOT NULL,
+    order_type TEXT NOT NULL CHECK (order_type IN ('detal', 'mayorista')),
     customer_name TEXT,
     customer_phone TEXT,
     notes TEXT,
@@ -17,23 +17,8 @@ CREATE TABLE IF NOT EXISTS reserved_orders (
 
 -- Indexes for reserved_orders
 CREATE INDEX IF NOT EXISTS idx_reserved_orders_status ON reserved_orders(status);
-CREATE INDEX IF NOT EXISTS idx_reserved_orders_created_at ON reserved_orders(created_at);
-
--- Table: reserved_order_lines
--- Stores line items for reserved orders with quantity and unit price
-CREATE TABLE IF NOT EXISTS reserved_order_lines (
-    id BIGSERIAL PRIMARY KEY,
-    reserved_order_id BIGINT NOT NULL REFERENCES reserved_orders(id) ON DELETE CASCADE,
-    item_id BIGINT NOT NULL REFERENCES items(id),
-    qty INT NOT NULL CHECK (qty > 0),
-    unit_price BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(reserved_order_id, item_id)
-);
-
--- Indexes for reserved_order_lines
-CREATE INDEX IF NOT EXISTS idx_reserved_order_lines_order_id ON reserved_order_lines(reserved_order_id);
-CREATE INDEX IF NOT EXISTS idx_reserved_order_lines_item_id ON reserved_order_lines(item_id);
+CREATE INDEX IF NOT EXISTS idx_reserved_orders_created_at ON reserved_orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reserved_orders_order_type ON reserved_orders(order_type);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_reserved_orders_updated_at()
