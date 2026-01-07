@@ -32,8 +32,15 @@ func main() {
 		} else {
 			log.Printf("Successfully loaded environment variables from %s (overriding system variables)", envPath)
 			// Debug: Show what was loaded
+			credsJSON := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 			credsPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-			log.Printf("DEBUG: GOOGLE_APPLICATION_CREDENTIALS after loading .env: %s", credsPath)
+			if len(credsJSON) > 0 {
+				log.Printf("DEBUG: GOOGLE_APPLICATION_CREDENTIALS_JSON is set (using JSON from environment)")
+			} else if credsPath != "" {
+				log.Printf("DEBUG: GOOGLE_APPLICATION_CREDENTIALS after loading .env: %s", credsPath)
+			} else {
+				log.Printf("DEBUG: Neither GOOGLE_APPLICATION_CREDENTIALS_JSON nor GOOGLE_APPLICATION_CREDENTIALS is set")
+			}
 		}
 	}
 

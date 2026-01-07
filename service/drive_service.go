@@ -23,15 +23,26 @@ type DriveService struct {
 var _ DriveServiceInterface = (*DriveService)(nil)
 
 // NewDriveService creates a new DriveService instance
-// credentialsPath should be the path to the Service Account JSON file
-func NewDriveService(credentialsPath string) (*DriveService, error) {
+// Accepts either credentials JSON bytes or a path to credentials file
+// If credentialsJSON is provided, it will be used; otherwise credentialsPath will be used
+func NewDriveService(credentialsJSON []byte, credentialsPath string) (*DriveService, error) {
 	ctx := context.Background()
 
-	log.Printf("Connecting to Google Drive API with credentials: %s", credentialsPath)
+	var opts []option.ClientOption
 
-	// Create Drive service using credentials file
-	// option.WithCredentialsFile automatically handles Service Account authentication
-	driveService, err := drive.NewService(ctx, option.WithCredentialsFile(credentialsPath))
+	// Prefer JSON credentials from environment variable if provided
+	if len(credentialsJSON) > 0 {
+		log.Printf("Connecting to Google Drive API with credentials from environment variable")
+		opts = append(opts, option.WithCredentialsJSON(credentialsJSON))
+	} else if credentialsPath != "" {
+		log.Printf("Connecting to Google Drive API with credentials file: %s", credentialsPath)
+		opts = append(opts, option.WithCredentialsFile(credentialsPath))
+	} else {
+		return nil, fmt.Errorf("either GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_APPLICATION_CREDENTIALS must be set")
+	}
+
+	// Create Drive service using credentials
+	driveService, err := drive.NewService(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drive service: %w", err)
 	}

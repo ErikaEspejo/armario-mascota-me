@@ -10,7 +10,14 @@ Crea un archivo `.env` en la raíz del proyecto (puedes copiar de `.env.example`
 
 ```bash
 # Google Drive Credentials
-GOOGLE_APPLICATION_CREDENTIALS=secrets/armario-mascota-aeeb428d158d.json
+# Opción 1: JSON completo como variable de entorno (recomendado para producción)
+GOOGLE_APPLICATION_CREDENTIALS_JSON={"type":"service_account","project_id":"...","private_key":"...","client_email":"..."}
+
+# Opción 2: Path al archivo JSON (para desarrollo local)
+# GOOGLE_APPLICATION_CREDENTIALS=secrets/armario-mascota-aeeb428d158d.json
+
+# Google Drive Folder ID
+GOOGLE_DRIVE_FOLDER_ID=1TtK0fnadxl3r1-8iYlv2GFf5LgdKxmID
 
 # PostgreSQL Database Connection
 # Opción 1: URL completa (recomendado)
@@ -44,9 +51,15 @@ DATABASE_URL=postgres://user:password@localhost:5432/armario_mascota?sslmode=dis
 En producción, configura las variables de entorno directamente en el sistema o contenedor:
 
 ```bash
-export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+# Opción 1: Credenciales JSON como variable de entorno (recomendado)
+export GOOGLE_APPLICATION_CREDENTIALS_JSON='{"type":"service_account",...}'
+export GOOGLE_DRIVE_FOLDER_ID=1TtK0fnadxl3r1-8iYlv2GFf5LgdKxmID
 export DATABASE_URL=postgres://user:password@host:port/dbname?sslmode=disable
 export ENV=production
+
+# Opción 2: Path al archivo JSON (alternativa)
+# export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+# export GOOGLE_DRIVE_FOLDER_ID=1TtK0fnadxl3r1-8iYlv2GFf5LgdKxmID
 ```
 
 ## Endpoints

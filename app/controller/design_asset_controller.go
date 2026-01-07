@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -15,8 +16,6 @@ import (
 	"armario-mascota-me/service"
 	"armario-mascota-me/utils"
 )
-
-const folderID = "1TtK0fnadxl3r1-8iYlv2GFf5LgdKxmID"
 
 // DesignAssetController handles HTTP requests for design assets
 type DesignAssetController struct {
@@ -40,6 +39,13 @@ func (c *DesignAssetController) LoadImages(w http.ResponseWriter, r *http.Reques
 	// Only allow GET method
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get folder ID from environment variable
+	folderID := os.Getenv("GOOGLE_DRIVE_FOLDER_ID")
+	if folderID == "" {
+		http.Error(w, "GOOGLE_DRIVE_FOLDER_ID environment variable is not set", http.StatusInternalServerError)
 		return
 	}
 
