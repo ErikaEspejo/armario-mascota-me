@@ -41,7 +41,7 @@ func (c *DownloadController) DownloadImages(w http.ResponseWriter, r *http.Reque
 	log.Printf("📥 Download request received for folder: %s", folderID)
 
 	// Execute download process
-	totalImages, downloaded, errors, err := c.downloadService.DownloadAllImages(folderID)
+	totalImages, downloaded, skipped, errors, err := c.downloadService.DownloadAllImages(folderID)
 	if err != nil {
 		log.Printf("❌ Download failed: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to download images: %v", err), http.StatusInternalServerError)
@@ -53,6 +53,7 @@ func (c *DownloadController) DownloadImages(w http.ResponseWriter, r *http.Reque
 		"status":       "success",
 		"total_images": totalImages,
 		"downloaded":   downloaded,
+		"skipped":      skipped,
 		"failed":       len(errors),
 		"errors":       errors,
 	}
@@ -66,6 +67,5 @@ func (c *DownloadController) DownloadImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	log.Printf("✅ Download request completed: %d/%d images downloaded", downloaded, totalImages)
+	log.Printf("✅ Download request completed: %d downloaded, %d skipped out of %d total images", downloaded, skipped, totalImages)
 }
-

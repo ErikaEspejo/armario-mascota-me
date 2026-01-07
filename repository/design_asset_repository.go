@@ -211,9 +211,9 @@ func (r *DesignAssetRepository) UpdateDescriptionAndHighlights(ctx context.Conte
 	return nil
 }
 
-// GetPending retrieves all design assets with status = 'pending'
+// GetPending retrieves all design assets with status = 'pending' (limited to 10 rows)
 func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.DesignAssetDetail, error) {
-	log.Printf("🔍 Fetching all design assets with status = 'pending'")
+	log.Printf("🔍 Fetching design assets with status = 'pending' (limit: 10)")
 
 	query := `
 		SELECT id, code, 
@@ -231,6 +231,7 @@ func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.Design
 		FROM design_assets
 		WHERE status = 'pending'
 		ORDER BY created_at ASC
+		LIMIT 10
 	`
 
 	rows, err := db.DB.QueryContext(ctx, query)
