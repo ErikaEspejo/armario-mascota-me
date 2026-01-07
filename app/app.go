@@ -22,13 +22,13 @@ func Initialize() error {
 
 	// Get credentials JSON from environment variable (preferred method)
 	credentialsJSON := []byte(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
-	
+
 	var credentialsPath string
 	if len(credentialsJSON) == 0 {
 		// Fallback to credentials file path if JSON is not provided
 		credentialsPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 		fmt.Printf("DEBUG: GOOGLE_APPLICATION_CREDENTIALS from env: %s\n", credentialsPath)
-		
+
 		if credentialsPath == "" {
 			return fmt.Errorf("either GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_APPLICATION_CREDENTIALS environment variable must be set")
 		}
@@ -79,11 +79,15 @@ func Initialize() error {
 	// Get base URL for catalog service (for image fetching)
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
-		// Check if running in Docker
-		if os.Getenv("DOCKER_ENV") == "true" {
-			baseURL = "http://host.docker.internal:8080"
-		} else {
+		// Only use localhost fallback in local development
+		env := os.Getenv("ENV")
+		if env != "production" {
 			baseURL = "http://localhost:8080"
+			fmt.Printf("DEBUG: BASE_URL not set, using localhost fallback for local development\n")
+		} else {
+			// In production, BASE_URL should be set
+			fmt.Printf("WARNING: BASE_URL environment variable is not set in production. Catalog generation may fail.\n")
+			baseURL = "http://localhost:8080" // Fallback, but will likely fail in production
 		}
 	}
 
@@ -102,4 +106,3 @@ func Initialize() error {
 
 	return nil
 }
-

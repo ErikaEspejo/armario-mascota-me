@@ -51,16 +51,20 @@ func main() {
 	defer db.CloseDB()
 
 	// Start server
+	// Listen on 0.0.0.0 to accept connections from all interfaces (required for Docker/Render)
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = ":8080"
-	} else if port[0] != ':' {
-		port = ":" + port
+		port = "8080"
 	}
-	log.Printf("Server starting on port %s", port)
-	log.Printf("Load images endpoint: GET http://localhost%s/admin/design-assets/load?folderId=YOUR_FOLDER_ID", port)
+	// Remove leading colon if present (PORT from Render doesn't include it)
+	if len(port) > 0 && port[0] == ':' {
+		port = port[1:]
+	}
+	addr := "0.0.0.0:" + port
+	log.Printf("Server starting on %s", addr)
+	log.Printf("Load images endpoint: GET http://localhost:%s/admin/design-assets/load?folderId=YOUR_FOLDER_ID", port)
 
-	if err := http.ListenAndServe(port, nil); err != nil {
+	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }

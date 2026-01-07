@@ -28,6 +28,38 @@ type CatalogService struct {
 	baseURL         string // Base URL for image endpoints (e.g., "http://localhost:8080")
 }
 
+// detectChromePath detects the path to Chrome/Chromium executable
+// Checks CHROME_PATH env var first, then common installation paths
+func detectChromePath() string {
+	// Check environment variable first
+	if chromePath := os.Getenv("CHROME_PATH"); chromePath != "" {
+		if _, err := os.Stat(chromePath); err == nil {
+			log.Printf("🔍 Using Chrome from CHROME_PATH: %s", chromePath)
+			return chromePath
+		}
+		log.Printf("⚠️  CHROME_PATH set but file not found: %s", chromePath)
+	}
+
+	// Common paths to check
+	paths := []string{
+		"/usr/bin/chromium",
+		"/usr/bin/chromium-browser",
+		"/usr/bin/google-chrome",
+		"/usr/bin/google-chrome-stable",
+		"/snap/bin/chromium",
+	}
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			log.Printf("🔍 Auto-detected Chrome: %s", path)
+			return path
+		}
+	}
+
+	log.Printf("⚠️  Chrome/Chromium not found in common paths. chromedp will attempt to find it automatically.")
+	return ""
+}
+
 // NewCatalogService creates a new CatalogService
 func NewCatalogService(
 	repo repository.CatalogRepositoryInterface,
@@ -120,13 +152,13 @@ func (s *CatalogService) loadStaticAsset(filename string, useBase64 bool) (strin
 		}
 		log.Printf("📁 Loaded static asset %s: %d bytes", filePath, len(data))
 		base64Str := base64.StdEncoding.EncodeToString(data)
-		
+
 		// Determine MIME type
 		mimeType := "image/png"
 		if filepath.Ext(filePath) == ".jpg" || filepath.Ext(filePath) == ".jpeg" {
 			mimeType = "image/jpeg"
 		}
-		
+
 		dataURI := fmt.Sprintf("data:%s;base64,%s", mimeType, base64Str)
 		log.Printf("✅ Created data URI for %s: %s (length: %d chars)", filename, mimeType, len(dataURI))
 		return dataURI, "", nil
@@ -186,14 +218,14 @@ func (s *CatalogService) RenderCatalogHTML(ctx context.Context, size string, ite
 
 	logoURL := ""
 	backgroundURL := ""
-	
+
 	if logoExt != "" {
 		logoURL = fmt.Sprintf("%s/static/catalog/logo%s", s.baseURL, logoExt)
 		log.Printf("📸 Logo URL: %s", logoURL)
 	} else {
 		log.Printf("⚠️  Warning: Logo file not found")
 	}
-	
+
 	if bgExt != "" {
 		backgroundURL = fmt.Sprintf("%s/static/catalog/background%s", s.baseURL, bgExt)
 		log.Printf("📸 Background URL: %s", backgroundURL)
@@ -240,7 +272,26 @@ func (s *CatalogService) GeneratePDF(ctx context.Context, size string) ([]byte, 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	chromedpCtx, chromedpCancel := chromedp.NewContext(ctx)
+	// Detect Chrome/Chromium path and configure chromedp
+	chromePath := detectChromePath()
+	var allocCtx context.Context
+	var allocCancel context.CancelFunc
+
+	if chromePath != "" {
+		// Use detected Chrome path
+		opts := append(chromedp.DefaultExecAllocatorOptions[:],
+			chromedp.ExecPath(chromePath),
+			chromedp.NoSandbox, // Required for running in Docker/containers
+		)
+		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, opts...)
+		defer allocCancel()
+	} else {
+		// Let chromedp auto-detect (may fail in containers)
+		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, chromedp.NoSandbox)
+		defer allocCancel()
+	}
+
+	chromedpCtx, chromedpCancel := chromedp.NewContext(allocCtx)
 	defer chromedpCancel()
 
 	// Construct render URL
@@ -317,7 +368,26 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	chromedpCtx, chromedpCancel := chromedp.NewContext(ctx, chromedp.WithLogf(log.Printf))
+	// Detect Chrome/Chromium path and configure chromedp
+	chromePath := detectChromePath()
+	var allocCtx context.Context
+	var allocCancel context.CancelFunc
+
+	if chromePath != "" {
+		// Use detected Chrome path
+		opts := append(chromedp.DefaultExecAllocatorOptions[:],
+			chromedp.ExecPath(chromePath),
+			chromedp.NoSandbox, // Required for running in Docker/containers
+		)
+		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, opts...)
+		defer allocCancel()
+	} else {
+		// Let chromedp auto-detect (may fail in containers)
+		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, chromedp.NoSandbox)
+		defer allocCancel()
+	}
+
+	chromedpCtx, chromedpCancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
 	defer chromedpCancel()
 
 	// Construct render URL
@@ -451,4 +521,3 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 	}
 	return map[int][]byte{1: buf}, nil
 }
-
