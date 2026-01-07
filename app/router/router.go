@@ -16,6 +16,7 @@ type Controllers struct {
 	Sale               *controller.SaleController
 	FinanceTransaction *controller.FinanceTransactionController
 	Catalog            *controller.CatalogController
+	Download           *controller.DownloadController
 }
 
 // pingHandler handles GET /ping
@@ -121,6 +122,9 @@ func SetupRoutes(controllers *Controllers) {
 	// Catalog routes
 	http.HandleFunc("/admin/catalog", controllers.Catalog.GenerateCatalog)
 	http.HandleFunc("/admin/catalog/render", controllers.Catalog.RenderCatalog)
+
+	// Download routes
+	http.HandleFunc("/admin/images/download", controllers.Download.DownloadImages)
 
 	// Reserved orders routes
 	// Create reserved order

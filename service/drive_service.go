@@ -140,3 +140,56 @@ func (ds *DriveService) DownloadImage(fileID string) ([]byte, error) {
 	log.Printf("✓ Successfully downloaded image from Drive: fileID=%s, size=%d bytes", fileID, len(imageData))
 	return imageData, nil
 }
+
+// GetImageFileNames returns a map of file ID to file name for all images in a folder
+func (ds *DriveService) GetImageFileNames(folderID string) (map[string]string, error) {
+	log.Printf("Fetching file names from Google Drive folder: %s", folderID)
+
+	// Build query to list files in the folder
+	query := fmt.Sprintf("'%s' in parents and trashed=false", folderID)
+
+	// List files
+	var allFiles []*drive.File
+	pageToken := ""
+	for {
+		call := ds.client.Files.List().
+			Q(query).
+			Fields("nextPageToken, files(id, name, mimeType)")
+
+		if pageToken != "" {
+			call = call.PageToken(pageToken)
+		}
+
+		r, err := call.Do()
+		if err != nil {
+			return nil, fmt.Errorf("failed to list files: %w", err)
+		}
+
+		allFiles = append(allFiles, r.Files...)
+		pageToken = r.NextPageToken
+
+		if pageToken == "" {
+			break
+		}
+	}
+
+	// Filter images and build map
+	fileNames := make(map[string]string)
+	imageMimeTypes := map[string]bool{
+		"image/png":  true,
+		"image/jpeg": true,
+		"image/jpg":  true,
+	}
+
+	for _, file := range allFiles {
+		// Check if it's an image
+		if !imageMimeTypes[strings.ToLower(file.MimeType)] {
+			continue
+		}
+
+		fileNames[file.Id] = file.Name
+	}
+
+	log.Printf("✓ Retrieved %d image file names from Google Drive", len(fileNames))
+	return fileNames, nil
+}

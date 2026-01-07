@@ -6,6 +6,7 @@ import "armario-mascota-me/models"
 type DriveServiceInterface interface {
 	ListDesignAssets(folderID string) ([]models.DesignAsset, error)
 	DownloadImage(fileID string) ([]byte, error)
+	GetImageFileNames(folderID string) (map[string]string, error)
 }
 
 

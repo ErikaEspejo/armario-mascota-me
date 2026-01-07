@@ -67,6 +67,9 @@ func Initialize() error {
 	// Initialize sync service
 	syncService := service.NewSyncService(driveService, designAssetRepo)
 
+	// Initialize download service
+	downloadService := service.NewDownloadService(driveService)
+
 	// Initialize pricing engine
 	pricingConfigPath := os.Getenv("PRICING_CONFIG_PATH")
 	if pricingConfigPath == "" {
@@ -99,6 +102,7 @@ func Initialize() error {
 		Sale:               controller.NewSaleController(saleRepo),
 		FinanceTransaction: controller.NewFinanceTransactionController(financeTransactionRepo),
 		Catalog:            controller.NewCatalogController(catalogRepo, designAssetRepo, driveService, baseURL),
+		Download:           controller.NewDownloadController(downloadService),
 	}
 
 	// Setup routes using standard http router
