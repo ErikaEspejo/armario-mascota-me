@@ -34,10 +34,8 @@ func detectChromePath() string {
 	// Check environment variable first
 	if chromePath := os.Getenv("CHROME_PATH"); chromePath != "" {
 		if _, err := os.Stat(chromePath); err == nil {
-			log.Printf("🔍 Using Chrome from CHROME_PATH: %s", chromePath)
 			return chromePath
 		}
-		log.Printf("⚠️  CHROME_PATH set but file not found: %s", chromePath)
 	}
 
 	// Common paths to check
@@ -51,12 +49,10 @@ func detectChromePath() string {
 
 	for _, path := range paths {
 		if _, err := os.Stat(path); err == nil {
-			log.Printf("🔍 Auto-detected Chrome: %s", path)
 			return path
 		}
 	}
 
-	log.Printf("⚠️  Chrome/Chromium not found in common paths. chromedp will attempt to find it automatically.")
 	return ""
 }
 
@@ -84,8 +80,6 @@ func (s *CatalogService) fetchImageAsBase64(imageURL string) (string, error) {
 	} else {
 		fullURL = imageURL
 	}
-
-	log.Printf("📥 Fetching image: %s", fullURL)
 
 	// Make HTTP request
 	resp, err := http.Get(fullURL)
@@ -150,7 +144,6 @@ func (s *CatalogService) loadStaticAsset(filename string, useBase64 bool) (strin
 		if err != nil {
 			return "", "", fmt.Errorf("failed to read file: %w", err)
 		}
-		log.Printf("📁 Loaded static asset %s: %d bytes", filePath, len(data))
 		base64Str := base64.StdEncoding.EncodeToString(data)
 
 		// Determine MIME type
@@ -160,7 +153,6 @@ func (s *CatalogService) loadStaticAsset(filename string, useBase64 bool) (strin
 		}
 
 		dataURI := fmt.Sprintf("data:%s;base64,%s", mimeType, base64Str)
-		log.Printf("✅ Created data URI for %s: %s (length: %d chars)", filename, mimeType, len(dataURI))
 		return dataURI, "", nil
 	}
 
@@ -194,10 +186,6 @@ func (s *CatalogService) RenderCatalogHTML(ctx context.Context, size string, ite
 
 	// Paginate items
 	pages := paginateItems(items)
-	log.Printf("📄 RenderCatalogHTML: Paginated %d items into %d pages", len(items), len(pages))
-	for i, page := range pages {
-		log.Printf("  Page %d: %d items", i+1, len(page))
-	}
 
 	// Always use absolute URLs for logo and background
 	// Determine file extension
@@ -221,16 +209,10 @@ func (s *CatalogService) RenderCatalogHTML(ctx context.Context, size string, ite
 
 	if logoExt != "" {
 		logoURL = fmt.Sprintf("%s/static/catalog/logo%s", s.baseURL, logoExt)
-		log.Printf("📸 Logo URL: %s", logoURL)
-	} else {
-		log.Printf("⚠️  Warning: Logo file not found")
 	}
 
 	if bgExt != "" {
 		backgroundURL = fmt.Sprintf("%s/static/catalog/background%s", s.baseURL, bgExt)
-		log.Printf("📸 Background URL: %s", backgroundURL)
-	} else {
-		log.Printf("⚠️  Warning: Background file not found")
 	}
 
 	// Prepare template data
@@ -266,8 +248,6 @@ func (s *CatalogService) RenderCatalogHTML(ctx context.Context, size string, ite
 // GeneratePDF generates a PDF from HTML using chromedp
 // size parameter is used to construct the render URL
 func (s *CatalogService) GeneratePDF(ctx context.Context, size string) ([]byte, error) {
-	log.Printf("📄 Generating PDF from URL: size=%s", size)
-
 	// Create context with timeout (30 seconds)
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -282,28 +262,40 @@ func (s *CatalogService) GeneratePDF(ctx context.Context, size string) ([]byte, 
 		opts := append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.ExecPath(chromePath),
 			chromedp.NoSandbox, // Required for running in Docker/containers
+			chromedp.Flag("enable-print-preview", true), // Enable print preview
 		)
 		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, opts...)
 		defer allocCancel()
 	} else {
 		// Let chromedp auto-detect (may fail in containers)
-		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, chromedp.NoSandbox)
+		opts := append(chromedp.DefaultExecAllocatorOptions[:],
+			chromedp.NoSandbox,
+			chromedp.Flag("enable-print-preview", true), // Enable print preview
+		)
+		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, opts...)
 		defer allocCancel()
 	}
 
 	chromedpCtx, chromedpCancel := chromedp.NewContext(allocCtx)
 	defer chromedpCancel()
 
+	// Enable Page domain for printing
+	if err := chromedp.Run(chromedpCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		return page.Enable().Do(ctx)
+	})); err != nil {
+		// Log warning but continue
+	}
+
 	// Construct render URL
 	renderURL := fmt.Sprintf("%s/admin/catalog/render?size=%s", s.baseURL, size)
-	log.Printf("🌐 Navigating to: %s", renderURL)
 
 	var pdfBuf []byte
 
 	// Run chromedp with proper viewport and wait for network/idle
 	// 210mm = 794px at 96 DPI, 350mm = 1323px at 96 DPI
+	// Use a larger viewport height to accommodate multiple pages
 	err := chromedp.Run(chromedpCtx,
-		chromedp.EmulateViewport(794, 1323),
+		chromedp.EmulateViewport(794, 5000), // Large height to show all pages
 		chromedp.Navigate(renderURL),
 		chromedp.WaitReady("body"),
 		chromedp.Sleep(2000), // Wait for initial page load
@@ -326,17 +318,20 @@ func (s *CatalogService) GeneratePDF(ctx context.Context, size string) ([]byte, 
 				]);
 			})();
 		`, nil),
-		// Set body and html to exact size
+		// Set html and body width, but let height be auto to accommodate all pages
 		chromedp.Evaluate(`
 			document.documentElement.style.width = '210mm';
-			document.documentElement.style.height = '350mm';
+			document.documentElement.style.height = 'auto';
+			document.documentElement.style.minHeight = '350mm';
 			document.body.style.width = '210mm';
-			document.body.style.height = '350mm';
+			document.body.style.height = 'auto';
+			document.body.style.minHeight = '350mm';
 		`, nil),
 		chromedp.Sleep(1000), // Final wait for layout
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			// 210mm x 350mm = 8.27" x 13.78" (1mm = 0.03937 inches)
+			// PrintToPDF will automatically handle page breaks via CSS page-break-after
 			pdfBuf, _, err = page.PrintToPDF().
 				WithPrintBackground(true).
 				WithPaperWidth(8.27).   // 210mm in inches
@@ -354,7 +349,6 @@ func (s *CatalogService) GeneratePDF(ctx context.Context, size string) ([]byte, 
 		return nil, fmt.Errorf("failed to generate PDF: %w", err)
 	}
 
-	log.Printf("✓ PDF generated: %d bytes", len(pdfBuf))
 	return pdfBuf, nil
 }
 
@@ -362,10 +356,17 @@ func (s *CatalogService) GeneratePDF(ctx context.Context, size string) ([]byte, 
 // Returns a map of page number to PNG data, or error
 // size parameter is used to construct the render URL
 func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int][]byte, error) {
-	log.Printf("📸 Generating PNG from URL: size=%s", size)
+	// Get items to calculate expected page count
+	items, err := s.repository.GetItemsBySizeForCatalog(ctx, size)
+	var expectedPages int
+	if err != nil {
+		expectedPages = 0
+	} else {
+		expectedPages = (len(items) + 8) / 9 // Ceiling division
+	}
 
 	// Create context with timeout (30 seconds)
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctxTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// Detect Chrome/Chromium path and configure chromedp
@@ -379,25 +380,25 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 			chromedp.ExecPath(chromePath),
 			chromedp.NoSandbox, // Required for running in Docker/containers
 		)
-		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, opts...)
+		allocCtx, allocCancel = chromedp.NewExecAllocator(ctxTimeout, opts...)
 		defer allocCancel()
 	} else {
 		// Let chromedp auto-detect (may fail in containers)
-		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, chromedp.NoSandbox)
+		allocCtx, allocCancel = chromedp.NewExecAllocator(ctxTimeout, chromedp.NoSandbox)
 		defer allocCancel()
 	}
 
-	chromedpCtx, chromedpCancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+	chromedpCtx, chromedpCancel := chromedp.NewContext(allocCtx)
 	defer chromedpCancel()
 
 	// Construct render URL
 	renderURL := fmt.Sprintf("%s/admin/catalog/render?size=%s", s.baseURL, size)
-	log.Printf("🌐 Navigating to: %s", renderURL)
 
 	// Get page count using JavaScript evaluation
+	// Use a larger viewport to see all pages
 	var pageCountVal float64
-	err := chromedp.Run(chromedpCtx,
-		chromedp.EmulateViewport(794, 1323),
+	err = chromedp.Run(chromedpCtx,
+		chromedp.EmulateViewport(794, 5000), // Large height to see all pages
 		chromedp.Navigate(renderURL),
 		chromedp.WaitReady("body"),
 		chromedp.Sleep(2000), // Wait for initial page load
@@ -420,14 +421,25 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 				]);
 			})();
 		`, nil),
-		// Set body and html to exact size
+		// Set width but let height be auto to show all pages
 		chromedp.Evaluate(`
 			document.documentElement.style.width = '210mm';
-			document.documentElement.style.height = '350mm';
+			document.documentElement.style.height = 'auto';
+			document.documentElement.style.minHeight = '350mm';
 			document.body.style.width = '210mm';
-			document.body.style.height = '350mm';
+			document.body.style.height = 'auto';
+			document.body.style.minHeight = '350mm';
 		`, nil),
-		chromedp.Sleep(1000), // Final wait
+		chromedp.Sleep(2000), // Wait for initial layout
+		// Scroll to bottom to ensure all pages are rendered
+		chromedp.Evaluate(`
+			window.scrollTo(0, document.body.scrollHeight);
+		`, nil),
+		chromedp.Sleep(1000), // Wait after scroll
+		chromedp.Evaluate(`
+			window.scrollTo(0, 0);
+		`, nil),
+		chromedp.Sleep(500), // Wait after scroll back
 		chromedp.Evaluate(`document.querySelectorAll('.page').length`, &pageCountVal),
 	)
 
@@ -438,10 +450,42 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 	// Convert to int
 	pageCount := int(pageCountVal)
 
-	log.Printf("📄 Found %d pages", pageCount)
-
 	if pageCount == 0 {
 		return nil, fmt.Errorf("no pages found in HTML")
+	}
+
+	// Double-check page count with a different method and get more info
+	var pageInfo struct {
+		Count   float64 `json:"count"`
+		HTML    string  `json:"html"`
+		BodyHTML string `json:"bodyHTML"`
+	}
+		err = chromedp.Run(chromedpCtx,
+		chromedp.Evaluate(`
+			(function() {
+				const pages = document.querySelectorAll('.page');
+				return {
+					count: pages.length,
+					html: document.documentElement.outerHTML.substring(0, 500),
+					bodyHTML: document.body.innerHTML.substring(0, 500)
+				};
+			})();
+		`, &pageInfo),
+	)
+	if err == nil {
+		if int(pageInfo.Count) != pageCount {
+			pageCount = int(pageInfo.Count)
+		}
+		// If expected pages is set and doesn't match detected count, use expected
+		if expectedPages > 0 && pageCount != expectedPages {
+			pageCount = expectedPages
+		}
+		if pageCount == 1 && expectedPages > 1 {
+			pageCount = expectedPages
+		}
+	} else if expectedPages > 0 && pageCount != expectedPages {
+		// If verification failed but we have expected pages, use that
+		pageCount = expectedPages
 	}
 
 	// For single page, return just that screenshot
@@ -487,37 +531,97 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 		return map[int][]byte{1: buf}, nil
 	}
 
-	// For multiple pages, return first page only for now
-	log.Printf("⚠️  Multi-page PNG: Returning first page only. Full multi-page support requires page-by-page capture.")
-	var buf []byte
-	err = chromedp.Run(chromedpCtx,
-		chromedp.EmulateViewport(794, 1323),
-		chromedp.Navigate(renderURL),
-		chromedp.WaitReady("body"),
-		chromedp.Sleep(2000),
-		chromedp.Evaluate(`
-			(function() {
-				return Promise.all([
-					document.fonts.ready,
-					Promise.all(Array.from(document.querySelectorAll('img')).map(img => {
-						return new Promise((resolve) => {
-							if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-								resolve();
-								return;
-							}
-							const timeout = setTimeout(() => resolve(), 5000);
-							img.onload = () => { clearTimeout(timeout); resolve(); };
-							img.onerror = () => { clearTimeout(timeout); resolve(); };
+	// For multiple pages, capture each page individually
+	// We already navigated and loaded the page above, so we can reuse the same context
+	pngs := make(map[int][]byte)
+
+	// Capture each page individually
+	for pageNum := 1; pageNum <= pageCount; pageNum++ {
+		var buf []byte
+
+		err = chromedp.Run(chromedpCtx,
+			// Set viewport to match page size
+			chromedp.EmulateViewport(794, 1323), // 210mm x 350mm
+			// Hide all pages except the current one and adjust body height
+			chromedp.Evaluate(fmt.Sprintf(`
+				(function() {
+					const pages = document.querySelectorAll('.page');
+					if (pages.length === 0) {
+						return 0;
+					}
+					pages.forEach((page, index) => {
+						if (index === %d - 1) {
+							page.style.display = 'flex';
+							page.style.visibility = 'visible';
+							page.style.position = 'relative';
+						} else {
+							page.style.display = 'none';
+							page.style.visibility = 'hidden';
+						}
+					});
+					// Adjust body and html height to match single page
+					document.documentElement.style.width = '210mm';
+					document.documentElement.style.height = '350mm';
+					document.documentElement.style.overflow = 'hidden';
+					document.body.style.width = '210mm';
+					document.body.style.height = '350mm';
+					document.body.style.overflow = 'hidden';
+					return pages.length;
+				})();
+			`, pageNum), nil),
+			chromedp.Sleep(800), // Wait for display change and layout
+			chromedp.CaptureScreenshot(&buf),
+		)
+
+		if err != nil {
+			// Restore visibility before continuing
+			chromedp.Run(chromedpCtx,
+				chromedp.Evaluate(`
+					(function() {
+						const pages = document.querySelectorAll('.page');
+						pages.forEach(page => {
+							page.style.display = 'flex';
+							page.style.visibility = 'visible';
 						});
-					}))
-				]);
-			})();
-		`, nil),
-		chromedp.Sleep(1000),
-		chromedp.CaptureScreenshot(&buf),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to capture screenshot: %w", err)
+						document.documentElement.style.height = 'auto';
+						document.documentElement.style.overflow = '';
+						document.body.style.height = 'auto';
+						document.body.style.overflow = '';
+					})();
+				`, nil),
+			)
+			continue
+		}
+
+		// Restore all pages visibility for next iteration
+		if pageNum < pageCount {
+			chromedp.Run(chromedpCtx,
+				chromedp.Evaluate(`
+					(function() {
+						const pages = document.querySelectorAll('.page');
+						pages.forEach(page => {
+							page.style.display = 'flex';
+							page.style.visibility = 'visible';
+						});
+						document.documentElement.style.height = 'auto';
+						document.documentElement.style.overflow = '';
+						document.body.style.height = 'auto';
+						document.body.style.overflow = '';
+					})();
+				`, nil),
+			)
+		}
+
+		if len(buf) == 0 {
+			continue
+		}
+
+		pngs[pageNum] = buf
 	}
-	return map[int][]byte{1: buf}, nil
+
+	if len(pngs) == 0 {
+		return nil, fmt.Errorf("failed to capture any pages")
+	}
+
+	return pngs, nil
 }

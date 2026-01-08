@@ -119,9 +119,10 @@ func SetupRoutes(controllers *Controllers) {
 	// Filter items
 	http.HandleFunc("/admin/items/filter", controllers.Item.FilterItems)
 
-	// Catalog routes
-	http.HandleFunc("/admin/catalog", controllers.Catalog.GenerateCatalog)
+	// Catalog routes - IMPORTANT: More specific routes must come BEFORE general ones
+	http.HandleFunc("/admin/catalog/png-page", controllers.Catalog.DownloadPNGPage)
 	http.HandleFunc("/admin/catalog/render", controllers.Catalog.RenderCatalog)
+	http.HandleFunc("/admin/catalog", controllers.Catalog.GenerateCatalog)
 
 	// Download routes
 	http.HandleFunc("/admin/images/download", controllers.Download.DownloadImages)

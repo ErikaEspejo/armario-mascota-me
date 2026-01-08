@@ -1,13 +1,15 @@
 package controller
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"armario-mascota-me/repository"
 	"armario-mascota-me/service"
@@ -21,6 +23,9 @@ type CatalogController struct {
 	designAssetRepo repository.DesignAssetRepositoryInterface
 	driveService    service.DriveServiceInterface
 	baseURL         string
+	// Temporary storage for PNG pages (key: sessionID, value: map of page number to PNG data)
+	pngStorage      map[string]map[int][]byte
+	pngStorageMutex sync.RWMutex
 }
 
 // NewCatalogController creates a new CatalogController
@@ -37,6 +42,7 @@ func NewCatalogController(
 		designAssetRepo: designAssetRepo,
 		driveService:    driveService,
 		baseURL:         baseURL,
+		pngStorage:      make(map[string]map[int][]byte),
 	}
 }
 
@@ -60,6 +66,12 @@ var validFormats = map[string]bool{
 
 // GenerateCatalog handles GET /admin/catalog?size=XS&format=pdf|png|html
 func (c *CatalogController) GenerateCatalog(w http.ResponseWriter, r *http.Request) {
+	// Check if this is actually a png-page request that got routed here
+	if strings.HasPrefix(r.URL.Path, "/admin/catalog/png-page") {
+		c.DownloadPNGPage(w, r)
+		return
+	}
+	
 	if r.Method != http.MethodGet {
 		log.Printf("❌ GenerateCatalog: Method not allowed: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -100,8 +112,6 @@ func (c *CatalogController) GenerateCatalog(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	log.Printf("📋 GenerateCatalog: size=%s (normalized=%s), format=%s", size, normalizedSize, format)
-
 	// Get items from repository
 	items, err := c.repository.GetItemsBySizeForCatalog(ctx, normalizedSize)
 	if err != nil {
@@ -116,12 +126,6 @@ func (c *CatalogController) GenerateCatalog(w http.ResponseWriter, r *http.Reque
 		http.Error(w, fmt.Sprintf("No active items found for size %s", normalizedSize), http.StatusNotFound)
 		return
 	}
-
-	log.Printf("✓ GenerateCatalog: Found %d items for size=%s", len(items), normalizedSize)
-	
-	// Log pagination info
-	pagesCount := (len(items) + 8) / 9 // Ceiling division
-	log.Printf("📄 GenerateCatalog: Will generate %d pages (9 items per page)", pagesCount)
 
 	// Render HTML (with base64 images for PDF/PNG)
 	useBase64 := format == "pdf" || format == "png"
@@ -169,50 +173,62 @@ func (c *CatalogController) GenerateCatalog(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
-		if len(pngs) == 1 {
-			// Single page: return PNG directly
-			filename := fmt.Sprintf("catalog_%s.png", normalizedSize)
-			w.Header().Set("Content-Type", "image/png")
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-			w.WriteHeader(http.StatusOK)
-			if _, err := w.Write(pngs[1]); err != nil {
-				log.Printf("❌ GenerateCatalog: Error writing PNG response: %v", err)
-			}
-		} else {
-			// Multiple pages: return ZIP
-			var zipBuf bytes.Buffer
-			zipWriter := zip.NewWriter(&zipBuf)
-
-			for pageNum, pngData := range pngs {
-				filename := fmt.Sprintf("catalog_%s_page_%d.png", normalizedSize, pageNum)
-				fileWriter, err := zipWriter.Create(filename)
-				if err != nil {
-					log.Printf("⚠️  Warning: Failed to create zip entry for page %d: %v", pageNum, err)
-					continue
+		// Generate a unique session ID
+		sessionID := fmt.Sprintf("%s_%d", normalizedSize, time.Now().UnixNano())
+		
+		// Store PNGs temporarily
+		c.pngStorageMutex.Lock()
+		c.pngStorage[sessionID] = pngs
+		c.pngStorageMutex.Unlock()
+		
+		// Schedule cleanup after 10 minutes
+		go func() {
+			time.Sleep(10 * time.Minute)
+			c.pngStorageMutex.Lock()
+			delete(c.pngStorage, sessionID)
+			c.pngStorageMutex.Unlock()
+		}()
+		
+		// Generate download links for each page
+		type PageLink struct {
+			Page     int    `json:"page"`
+			URL      string `json:"url"`
+			Filename string `json:"filename"`
+		}
+		
+		var pages []PageLink
+		for i := 1; i <= len(pngs); i++ {
+			if _, exists := pngs[i]; exists {
+				// Only return the path, not the full URL
+				downloadPath := fmt.Sprintf("/admin/catalog/png-page?session=%s&page=%d", sessionID, i)
+				// For single page, use simpler filename without page number
+				var filename string
+				if len(pngs) == 1 {
+					filename = fmt.Sprintf("catalog_%s.png", normalizedSize)
+				} else {
+					filename = fmt.Sprintf("catalog_%s_page_%d.png", normalizedSize, i)
 				}
-				if _, err := fileWriter.Write(pngData); err != nil {
-					log.Printf("⚠️  Warning: Failed to write zip entry for page %d: %v", pageNum, err)
-					continue
-				}
-			}
-
-			if err := zipWriter.Close(); err != nil {
-				log.Printf("❌ GenerateCatalog: Error closing zip writer: %v", err)
-				http.Error(w, "Failed to create ZIP file", http.StatusInternalServerError)
-				return
-			}
-
-			filename := fmt.Sprintf("catalog_%s.zip", normalizedSize)
-			w.Header().Set("Content-Type", "application/zip")
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-			w.WriteHeader(http.StatusOK)
-			if _, err := w.Write(zipBuf.Bytes()); err != nil {
-				log.Printf("❌ GenerateCatalog: Error writing ZIP response: %v", err)
+				pages = append(pages, PageLink{
+					Page:     i,
+					URL:      downloadPath,
+					Filename: filename,
+				})
 			}
 		}
+		
+		response := map[string]interface{}{
+			"sessionId": sessionID,
+			"totalPages": len(pngs),
+			"size": normalizedSize,
+			"pages": pages,
+		}
+		
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("❌ GenerateCatalog: Error encoding JSON response: %v", err)
+		}
 	}
-
-	log.Printf("✅ GenerateCatalog: Successfully generated %s catalog for size=%s", format, normalizedSize)
 }
 
 // RenderCatalog handles GET /admin/catalog/render?size=XS
@@ -244,8 +260,6 @@ func (c *CatalogController) RenderCatalog(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	log.Printf("📋 RenderCatalog: size=%s (normalized=%s)", size, normalizedSize)
-
 	// Get items from repository
 	items, err := c.repository.GetItemsBySizeForCatalog(ctx, normalizedSize)
 	if err != nil {
@@ -261,8 +275,6 @@ func (c *CatalogController) RenderCatalog(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	log.Printf("✓ RenderCatalog: Found %d items for size=%s", len(items), normalizedSize)
-
 	// Render HTML with absolute URLs (no base64)
 	htmlContent, err := c.catalogService.RenderCatalogHTML(ctx, normalizedSize, items, false)
 	if err != nil {
@@ -277,5 +289,115 @@ func (c *CatalogController) RenderCatalog(w http.ResponseWriter, r *http.Request
 	if _, err := w.Write([]byte(htmlContent)); err != nil {
 		log.Printf("❌ RenderCatalog: Error writing HTML response: %v", err)
 	}
+}
+
+// DownloadPNGPage handles GET /admin/catalog/png-page?session=XXX&page=N
+// Returns a specific PNG page from temporary storage
+func (c *CatalogController) DownloadPNGPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		log.Printf("❌ DownloadPNGPage: Method not allowed: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sessionID := strings.TrimSpace(r.URL.Query().Get("session"))
+	pageStr := strings.TrimSpace(r.URL.Query().Get("page"))
+
+	if sessionID == "" {
+		log.Printf("❌ DownloadPNGPage: session parameter is required")
+		http.Error(w, "session parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	pageNum, err := strconv.Atoi(pageStr)
+	if err != nil || pageNum < 1 {
+		log.Printf("❌ DownloadPNGPage: Invalid page number: %s", pageStr)
+		http.Error(w, "Invalid page number", http.StatusBadRequest)
+		return
+	}
+
+	// Retrieve PNG from temporary storage
+	c.pngStorageMutex.RLock()
+	pngs, exists := c.pngStorage[sessionID]
+	c.pngStorageMutex.RUnlock()
+
+	if !exists {
+		log.Printf("❌ DownloadPNGPage: Session not found: %s", sessionID)
+		http.Error(w, "Session expired or not found", http.StatusNotFound)
+		return
+	}
+
+	pngData, exists := pngs[pageNum]
+	if !exists {
+		log.Printf("❌ DownloadPNGPage: Page %d not found in session %s", pageNum, sessionID)
+		http.Error(w, fmt.Sprintf("Page %d not found", pageNum), http.StatusNotFound)
+		return
+	}
+
+	// Validate PNG data (PNG files start with PNG signature)
+	if len(pngData) < 8 {
+		log.Printf("❌ DownloadPNGPage: PNG data too short for page %d (%d bytes)", pageNum, len(pngData))
+		http.Error(w, "Invalid PNG data", http.StatusInternalServerError)
+		return
+	}
+	pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	if len(pngData) < 8 || !equalBytes(pngData[:8], pngSignature) {
+		log.Printf("❌ DownloadPNGPage: Invalid PNG signature for page %d (first 8 bytes: %x)", pageNum, pngData[:8])
+		http.Error(w, "Invalid PNG data", http.StatusInternalServerError)
+		return
+	}
+
+	// Extract size from session ID (format: SIZE_TIMESTAMP)
+	parts := strings.Split(sessionID, "_")
+	size := "L" // Default
+	if len(parts) > 0 {
+		size = parts[0]
+	}
+
+	filename := fmt.Sprintf("catalog_%s_page_%d.png", size, pageNum)
+	
+	// Set headers for PNG download - IMPORTANT: Set headers BEFORE WriteHeader
+	// Use Content-Disposition: attachment to force download instead of opening in browser
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pngData)))
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	
+	w.WriteHeader(http.StatusOK)
+	
+	// Write PNG data directly
+	n, err := w.Write(pngData)
+	if err != nil {
+		log.Printf("❌ DownloadPNGPage: Error writing PNG response: %v", err)
+		return
+	}
+	if n != len(pngData) {
+		log.Printf("⚠️ DownloadPNGPage: Partial write: wrote %d of %d bytes", n, len(pngData))
+	}
+}
+
+// equalBytes compares two byte slices
+func equalBytes(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// getPageNumbers returns a slice of page numbers from a PNG map
+func getPageNumbers(pngs map[int][]byte) []int {
+	pages := make([]int, 0, len(pngs))
+	for pageNum := range pngs {
+		pages = append(pages, pageNum)
+	}
+	return pages
 }
 
