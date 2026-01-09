@@ -87,7 +87,7 @@ func (ds *DriveService) ListDesignAssets(folderID string) ([]models.DesignAsset,
 		}
 	}
 
-	log.Printf("✓ Retrieved %d total files from Google Drive (fetched in %d pages)", len(allFiles))
+	log.Printf("✓ Retrieved %d total files from Google Drive (fetched in %d pages)", len(allFiles), pageCount)
 
 	// Filter images and build simple assets
 	var designAssets []models.DesignAsset

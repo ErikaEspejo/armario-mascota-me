@@ -365,8 +365,19 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 		expectedPages = (len(items) + 8) / 9 // Ceiling division
 	}
 
-	// Create context with timeout (30 seconds)
-	ctxTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// PNG generation can be slower than PDF because we screenshot each page.
+	// Use a dynamic timeout based on expected pages to avoid truncating large catalogs.
+	timeout := 30 * time.Second
+	if expectedPages > 1 {
+		// Base + per-page budget; capped to keep requests bounded.
+		timeout = time.Duration(20+expectedPages*10) * time.Second
+		if timeout > 3*time.Minute {
+			timeout = 3 * time.Minute
+		}
+	}
+	log.Printf("📸 GeneratePNG: size=%s expectedPages=%d timeout=%s", size, expectedPages, timeout)
+
+	ctxTimeout, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Detect Chrome/Chromium path and configure chromedp
@@ -487,6 +498,7 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 		// If verification failed but we have expected pages, use that
 		pageCount = expectedPages
 	}
+	log.Printf("📄 GeneratePNG: size=%s detectedPages=%d (expected=%d)", size, pageCount, expectedPages)
 
 	// For single page, return just that screenshot
 	if pageCount == 1 {
@@ -534,93 +546,97 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 	// For multiple pages, capture each page individually
 	// We already navigated and loaded the page above, so we can reuse the same context
 	pngs := make(map[int][]byte)
+	missingPages := make([]int, 0)
+	const maxAttemptsPerPage = 2
+
+	restoreAllPages := func() {
+		_ = chromedp.Run(chromedpCtx,
+			chromedp.Evaluate(`
+				(function() {
+					const pages = document.querySelectorAll('.page');
+					pages.forEach(page => {
+						page.style.display = 'flex';
+						page.style.visibility = 'visible';
+					});
+					document.documentElement.style.height = 'auto';
+					document.documentElement.style.overflow = '';
+					document.body.style.height = 'auto';
+					document.body.style.overflow = '';
+				})();
+			`, nil),
+		)
+	}
 
 	// Capture each page individually
 	for pageNum := 1; pageNum <= pageCount; pageNum++ {
 		var buf []byte
+		var lastErr error
 
-		err = chromedp.Run(chromedpCtx,
-			// Set viewport to match page size
-			chromedp.EmulateViewport(794, 1323), // 210mm x 350mm
-			// Hide all pages except the current one and adjust body height
-			chromedp.Evaluate(fmt.Sprintf(`
-				(function() {
-					const pages = document.querySelectorAll('.page');
-					if (pages.length === 0) {
-						return 0;
-					}
-					pages.forEach((page, index) => {
-						if (index === %d - 1) {
-							page.style.display = 'flex';
-							page.style.visibility = 'visible';
-							page.style.position = 'relative';
-						} else {
-							page.style.display = 'none';
-							page.style.visibility = 'hidden';
+		for attempt := 1; attempt <= maxAttemptsPerPage; attempt++ {
+			buf = nil
+			lastErr = chromedp.Run(chromedpCtx,
+				// Set viewport to match page size
+				chromedp.EmulateViewport(794, 1323), // 210mm x 350mm
+				// Hide all pages except the current one and adjust body height
+				chromedp.Evaluate(fmt.Sprintf(`
+					(function() {
+						const pages = document.querySelectorAll('.page');
+						if (pages.length === 0) {
+							return 0;
 						}
-					});
-					// Adjust body and html height to match single page
-					document.documentElement.style.width = '210mm';
-					document.documentElement.style.height = '350mm';
-					document.documentElement.style.overflow = 'hidden';
-					document.body.style.width = '210mm';
-					document.body.style.height = '350mm';
-					document.body.style.overflow = 'hidden';
-					return pages.length;
-				})();
-			`, pageNum), nil),
-			chromedp.Sleep(800), // Wait for display change and layout
-			chromedp.CaptureScreenshot(&buf),
-		)
-
-		if err != nil {
-			// Restore visibility before continuing
-			chromedp.Run(chromedpCtx,
-				chromedp.Evaluate(`
-					(function() {
-						const pages = document.querySelectorAll('.page');
-						pages.forEach(page => {
-							page.style.display = 'flex';
-							page.style.visibility = 'visible';
+						pages.forEach((page, index) => {
+							if (index === %d - 1) {
+								page.style.display = 'flex';
+								page.style.visibility = 'visible';
+								page.style.position = 'relative';
+							} else {
+								page.style.display = 'none';
+								page.style.visibility = 'hidden';
+							}
 						});
-						document.documentElement.style.height = 'auto';
-						document.documentElement.style.overflow = '';
-						document.body.style.height = 'auto';
-						document.body.style.overflow = '';
+						// Adjust body and html height to match single page
+						document.documentElement.style.width = '210mm';
+						document.documentElement.style.height = '350mm';
+						document.documentElement.style.overflow = 'hidden';
+						document.body.style.width = '210mm';
+						document.body.style.height = '350mm';
+						document.body.style.overflow = 'hidden';
+						return pages.length;
 					})();
-				`, nil),
+				`, pageNum), nil),
+				chromedp.Sleep(900), // Wait for display change and layout
+				chromedp.CaptureScreenshot(&buf),
 			)
-			continue
+
+			if lastErr == nil && len(buf) > 0 {
+				break
+			}
+
+			log.Printf("⚠️ GeneratePNG: failed page=%d attempt=%d/%d err=%v buf=%d", pageNum, attempt, maxAttemptsPerPage, lastErr, len(buf))
+			restoreAllPages()
+			time.Sleep(400 * time.Millisecond)
 		}
 
-		// Restore all pages visibility for next iteration
-		if pageNum < pageCount {
-			chromedp.Run(chromedpCtx,
-				chromedp.Evaluate(`
-					(function() {
-						const pages = document.querySelectorAll('.page');
-						pages.forEach(page => {
-							page.style.display = 'flex';
-							page.style.visibility = 'visible';
-						});
-						document.documentElement.style.height = 'auto';
-						document.documentElement.style.overflow = '';
-						document.body.style.height = 'auto';
-						document.body.style.overflow = '';
-					})();
-				`, nil),
-			)
-		}
-
-		if len(buf) == 0 {
+		if lastErr != nil || len(buf) == 0 {
+			missingPages = append(missingPages, pageNum)
+			// Restore for subsequent pages before continuing
+			restoreAllPages()
 			continue
 		}
 
 		pngs[pageNum] = buf
+
+		// Restore all pages visibility for next iteration
+		if pageNum < pageCount {
+			restoreAllPages()
+		}
 	}
 
 	if len(pngs) == 0 {
 		return nil, fmt.Errorf("failed to capture any pages")
+	}
+	if len(missingPages) > 0 {
+		return nil, fmt.Errorf("failed to capture all pages: missing=%v captured=%d/%d", missingPages, len(pngs), pageCount)
 	}
 
 	return pngs, nil

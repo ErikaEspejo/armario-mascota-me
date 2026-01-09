@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -197,28 +198,27 @@ func (c *CatalogController) GenerateCatalog(w http.ResponseWriter, r *http.Reque
 		}
 		
 		var pages []PageLink
-		for i := 1; i <= len(pngs); i++ {
-			if _, exists := pngs[i]; exists {
-				// Only return the path, not the full URL
-				downloadPath := fmt.Sprintf("/admin/catalog/png-page?session=%s&page=%d", sessionID, i)
-				// For single page, use simpler filename without page number
-				var filename string
-				if len(pngs) == 1 {
-					filename = fmt.Sprintf("catalog_%s.png", normalizedSize)
-				} else {
-					filename = fmt.Sprintf("catalog_%s_page_%d.png", normalizedSize, i)
-				}
-				pages = append(pages, PageLink{
-					Page:     i,
-					URL:      downloadPath,
-					Filename: filename,
-				})
+		pageNums := getPageNumbers(pngs)
+		for _, pageNum := range pageNums {
+			// Only return the path, not the full URL
+			downloadPath := fmt.Sprintf("/admin/catalog/png-page?session=%s&page=%d", sessionID, pageNum)
+			// For single page, use simpler filename without page number
+			var filename string
+			if len(pageNums) == 1 {
+				filename = fmt.Sprintf("catalog_%s.png", normalizedSize)
+			} else {
+				filename = fmt.Sprintf("catalog_%s_page_%d.png", normalizedSize, pageNum)
 			}
+			pages = append(pages, PageLink{
+				Page:     pageNum,
+				URL:      downloadPath,
+				Filename: filename,
+			})
 		}
 		
 		response := map[string]interface{}{
 			"sessionId": sessionID,
-			"totalPages": len(pngs),
+			"totalPages": len(pageNums),
 			"size": normalizedSize,
 			"pages": pages,
 		}
@@ -398,6 +398,7 @@ func getPageNumbers(pngs map[int][]byte) []int {
 	for pageNum := range pngs {
 		pages = append(pages, pageNum)
 	}
+	sort.Ints(pages)
 	return pages
 }
 
