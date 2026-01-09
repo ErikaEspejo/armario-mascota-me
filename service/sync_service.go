@@ -30,18 +30,23 @@ var _ SyncServiceInterface = (*SyncService)(nil)
 // SyncDesignAssets synchronizes design assets from Google Drive to PostgreSQL
 // Returns the list of design assets from Google Drive
 func (s *SyncService) SyncDesignAssets(ctx context.Context, folderID string) ([]models.DesignAsset, error) {
+	assets, _, _, _, err := s.SyncDesignAssetsWithStats(ctx, folderID)
+	return assets, err
+}
+
+// SyncDesignAssetsWithStats synchronizes design assets from Google Drive to PostgreSQL and returns stats.
+// inserted = new rows created, skipped = already existed (by drive_file_id), total = total assets seen in Drive.
+func (s *SyncService) SyncDesignAssetsWithStats(ctx context.Context, folderID string) (assets []models.DesignAsset, inserted int, skipped int, total int, err error) {
 	log.Printf("🔄 Starting synchronization process for folder: %s", folderID)
 
 	// Get all design assets from Google Drive
 	driveAssets, err := s.driveService.ListDesignAssets(folderID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list design assets from Drive: %w", err)
+		return nil, 0, 0, 0, fmt.Errorf("failed to list design assets from Drive: %w", err)
 	}
 
 	log.Printf("📦 Processing %d design assets from Google Drive", len(driveAssets))
-
-	inserted := 0
-	skipped := 0
+	total = len(driveAssets)
 
 	// Process each asset
 	for _, asset := range driveAssets {
@@ -78,6 +83,6 @@ func (s *SyncService) SyncDesignAssets(ctx context.Context, folderID string) ([]
 		inserted++
 	}
 
-	log.Printf("🎉 Synchronization completed successfully: %d inserted, %d skipped, %d total processed", inserted, skipped, len(driveAssets))
-	return driveAssets, nil
+	log.Printf("🎉 Synchronization completed successfully: %d inserted, %d skipped, %d total processed", inserted, skipped, total)
+	return driveAssets, inserted, skipped, total, nil
 }

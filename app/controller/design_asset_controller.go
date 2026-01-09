@@ -19,16 +19,16 @@ import (
 
 // DesignAssetController handles HTTP requests for design assets
 type DesignAssetController struct {
-	syncService service.SyncServiceInterface
-	repository  repository.DesignAssetRepositoryInterface
+	syncService  service.SyncServiceInterface
+	repository   repository.DesignAssetRepositoryInterface
 	driveService service.DriveServiceInterface
 }
 
 // NewDesignAssetController creates a new DesignAssetController
 func NewDesignAssetController(syncService service.SyncServiceInterface, repo repository.DesignAssetRepositoryInterface, driveService service.DriveServiceInterface) *DesignAssetController {
 	return &DesignAssetController{
-		syncService: syncService,
-		repository:  repo,
+		syncService:  syncService,
+		repository:   repo,
 		driveService: driveService,
 	}
 }
@@ -51,7 +51,7 @@ func (c *DesignAssetController) LoadImages(w http.ResponseWriter, r *http.Reques
 
 	// Execute synchronization (fetches from Drive and syncs to DB)
 	ctx := context.Background()
-	designAssets, err := c.syncService.SyncDesignAssets(ctx, folderID)
+	designAssets, inserted, skipped, total, err := c.syncService.SyncDesignAssetsWithStats(ctx, folderID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load and sync design assets: %v", err), http.StatusInternalServerError)
 		return
@@ -60,8 +60,22 @@ func (c *DesignAssetController) LoadImages(w http.ResponseWriter, r *http.Reques
 	// Set content type
 	w.Header().Set("Content-Type", "application/json")
 
-	// Encode and send JSON response with the design assets
-	if err := json.NewEncoder(w).Encode(designAssets); err != nil {
+	// Optional stats wrapper (keeps backward compatibility: default response is the original array)
+	statsParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("stats")))
+	includeStats := statsParam == "1" || statsParam == "true" || statsParam == "yes"
+
+	var resp interface{} = designAssets
+	if includeStats {
+		resp = map[string]interface{}{
+			"inserted": inserted,
+			"skipped":  skipped,
+			"total":    total,
+			"assets":   designAssets,
+		}
+	}
+
+	// Encode and send JSON response
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
@@ -166,7 +180,7 @@ func (c *DesignAssetController) GetPendingDesignAssets(w http.ResponseWriter, r 
 		// Construct URL to optimized image endpoint
 		optimizedURL := fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", asset.ID)
 		response[i] = models.DesignAssetDetailWithOptimizedURL{
-			DesignAssetDetail:  asset,
+			DesignAssetDetail: asset,
 			OptimizedImageUrl: optimizedURL,
 		}
 	}
@@ -283,7 +297,7 @@ func (c *DesignAssetController) GetOptimizedImage(w http.ResponseWriter, r *http
 // Updates all fields of a design asset including code generation
 func (c *DesignAssetController) UpdateFullDesignAsset(w http.ResponseWriter, r *http.Request) {
 	log.Printf("📥 UpdateFullDesignAsset: Received %s request to %s", r.Method, r.URL.Path)
-	
+
 	if r.Method != http.MethodPost {
 		log.Printf("❌ UpdateFullDesignAsset: Method not allowed: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -327,7 +341,7 @@ func (c *DesignAssetController) UpdateFullDesignAsset(w http.ResponseWriter, r *
 	colorSecondaryCode := utils.MapColorToCode(colorSecondary)
 	hoodieTypeCode := utils.MapHoodieTypeToCode(hoodieType)
 	imageTypeCode := utils.ParseImageTypeSizes(imageType)
-	
+
 	// Map decoBase values: N/A -> 0, Círculo -> C, Nube -> N
 	decoBaseMapped := decoBase
 	if decoBase == "n/a" {
@@ -394,7 +408,7 @@ func (c *DesignAssetController) FilterDesignAssets(w http.ResponseWriter, r *htt
 
 	// Parse query parameters
 	queryParams := r.URL.Query()
-	
+
 	// Helper function to decode and normalize query param
 	decodeAndNormalize := func(param string) string {
 		if param == "" {
@@ -489,7 +503,7 @@ func (c *DesignAssetController) FilterDesignAssets(w http.ResponseWriter, r *htt
 		// Construct URL to optimized image endpoint
 		optimizedURL := fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", asset.ID)
 		response[i] = models.DesignAssetDetailWithOptimizedURL{
-			DesignAssetDetail:  asset,
+			DesignAssetDetail: asset,
 			OptimizedImageUrl: optimizedURL,
 		}
 	}
