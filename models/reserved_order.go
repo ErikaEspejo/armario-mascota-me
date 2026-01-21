@@ -21,6 +21,7 @@ type ReservedOrderLine struct {
 	Qty            int    `json:"qty"`
 	UnitPrice      int64  `json:"unitPrice"`
 	CreatedAt      string `json:"createdAt"`
+	CustomCode     *string `json:"customCode,omitempty"` // Nullable custom code for custom items
 	// Item details (populated when joining with items table)
 	ItemSKU   string `json:"itemSku,omitempty"`
 	ItemSize  string `json:"itemSize,omitempty"`
@@ -40,9 +41,14 @@ type CreateReservedOrderRequest struct {
 
 // AddItemToOrderRequest represents the request body for adding an item to a reserved order
 // Example: {"itemId": 123, "qty": 2}
+// Example with custom: {"itemId": 123, "qty": 2, "type": "custom", "primaryColor": "negro", "secondaryColor": "azul cielo", "hoodieType": "buso tipo esqueleto"}
 type AddItemToOrderRequest struct {
-	ItemID int64 `json:"itemId"`
-	Qty    int   `json:"qty"`
+	ItemID         int64  `json:"itemId"`
+	Qty            int    `json:"qty"`
+	Type           string `json:"type,omitempty"`
+	PrimaryColor   string `json:"primaryColor,omitempty"`
+	SecondaryColor string `json:"secondaryColor,omitempty"`
+	HoodieType     string `json:"hoodieType,omitempty"`
 }
 
 // UpdateItemQuantityRequest represents the request body for updating item quantity in a reserved order
@@ -206,6 +212,7 @@ type ReservedOrderLineWithItem struct {
 	Qty            int          `json:"qty"`
 	UnitPrice      int64        `json:"unitPrice"`
 	CreatedAt      string       `json:"createdAt"`
+	CustomCode     *string      `json:"customCode,omitempty"` // Nullable custom code for custom items
 	Item           ItemFullInfo `json:"item"`
 }
 

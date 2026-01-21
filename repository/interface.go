@@ -28,7 +28,7 @@ type ItemRepositoryInterface interface {
 // ReservedOrderRepositoryInterface defines the contract for reserved order repository operations
 type ReservedOrderRepositoryInterface interface {
 	Create(ctx context.Context, req *models.CreateReservedOrderRequest) (*models.ReservedOrder, error)
-	AddItem(ctx context.Context, orderID int64, itemID int64, qty int) (*models.ReservedOrderLine, error)
+	AddItem(ctx context.Context, orderID int64, itemID int64, qty int, customCode *string) (*models.ReservedOrderLine, error)
 	RemoveItem(ctx context.Context, orderID int64, itemID int64) error
 	UpdateItemQuantity(ctx context.Context, orderID int64, itemID int64, newQty int) (*models.ReservedOrderLine, error)
 	UpdateOrder(ctx context.Context, req *models.UpdateReservedOrderRequest) (*models.ReservedOrderResponse, error)

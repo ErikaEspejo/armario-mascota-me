@@ -178,8 +178,30 @@ func (c *ReservedOrderController) AddItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Handle custom type: if type is "custom", construct custom code
+	var customCode *string
+	typeNormalized := strings.ToLower(strings.TrimSpace(req.Type))
+	if typeNormalized == "custom" {
+		// Read custom fields and construct custom code
+		if req.PrimaryColor == "" || req.SecondaryColor == "" || req.HoodieType == "" {
+			log.Printf("❌ AddItem: Custom type requires primaryColor, secondaryColor, and hoodieType")
+			http.Error(w, "custom type requires primaryColor, secondaryColor, and hoodieType", http.StatusBadRequest)
+			return
+		}
+
+		// Map colors and hoodie type to codes using existing utilities
+		primaryColorCode := utils.MapColorToCode(req.PrimaryColor)
+		secondaryColorCode := utils.MapColorToCode(req.SecondaryColor)
+		hoodieTypeCode := utils.MapHoodieTypeToCode(req.HoodieType)
+
+		// Construct custom code: primaryColor_secondaryColor_hoodieType
+		constructedCode := fmt.Sprintf("%s_%s_%s", primaryColorCode, secondaryColorCode, hoodieTypeCode)
+		customCode = &constructedCode
+		log.Printf("🔧 AddItem: Custom type detected, constructed custom code: %s", constructedCode)
+	}
+
 	ctx := context.Background()
-	line, err := c.repository.AddItem(ctx, orderID, req.ItemID, req.Qty)
+	line, err := c.repository.AddItem(ctx, orderID, req.ItemID, req.Qty, customCode)
 	if err != nil {
 		log.Printf("❌ AddItem: Error adding item: %v", err)
 		errMsg := err.Error()
@@ -663,14 +685,36 @@ func (c *ReservedOrderController) GetOrder(w http.ResponseWriter, r *http.Reques
 
 	// Build image endpoints and apply mappings for readable labels
 	for i := range order.Lines {
-		item := &order.Lines[i].Item
+		line := &order.Lines[i]
+		item := &line.Item
 		designAssetID := item.DesignAssetID
 		
 		// Build image endpoints
 		item.ImageUrlThumb = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", designAssetID)
 		item.ImageUrlMedium = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=medium", designAssetID)
 		
-		// Apply mappings for readable labels
+		// If customCode is present, parse it and override item fields
+		// Format: primaryColor_secondaryColor_hoodieType (e.g., "CSM_NG_BE")
+		if line.CustomCode != nil && *line.CustomCode != "" {
+			customCodeParts := strings.Split(*line.CustomCode, "_")
+			if len(customCodeParts) == 3 {
+				primaryColorCode := customCodeParts[0]
+				secondaryColorCode := customCodeParts[1]
+				hoodieTypeCode := customCodeParts[2]
+				
+				// Override item fields with custom code values
+				item.ColorPrimary = primaryColorCode
+				item.ColorSecondary = secondaryColorCode
+				item.HoodieType = hoodieTypeCode
+				
+				log.Printf("🔧 GetOrder: Mapped customCode=%s to colorPrimary=%s, colorSecondary=%s, hoodieType=%s", 
+					*line.CustomCode, primaryColorCode, secondaryColorCode, hoodieTypeCode)
+			} else {
+				log.Printf("⚠️ GetOrder: Invalid customCode format: %s (expected format: primaryColor_secondaryColor_hoodieType)", *line.CustomCode)
+			}
+		}
+		
+		// Apply mappings for readable labels (will use custom values if customCode was present)
 		item.ColorPrimaryLabel = utils.MapCodeToColor(item.ColorPrimary)
 		item.ColorSecondaryLabel = utils.MapCodeToColor(item.ColorSecondary)
 		item.HoodieTypeLabel = utils.MapCodeToHoodieType(item.HoodieType)
@@ -960,14 +1004,36 @@ func (c *ReservedOrderController) GetSeparatedCarts(w http.ResponseWriter, r *ht
 	// Build image endpoints and apply mappings for readable labels
 	for i := range carts {
 		for j := range carts[i].Lines {
-			item := &carts[i].Lines[j].Item
+			line := &carts[i].Lines[j]
+			item := &line.Item
 			designAssetID := item.DesignAssetID
 			
 			// Build image endpoints
 			item.ImageUrlThumb = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", designAssetID)
 			item.ImageUrlMedium = fmt.Sprintf("/admin/design-assets/pending/%d/image?size=medium", designAssetID)
 			
-			// Apply mappings for readable labels
+			// If customCode is present, parse it and override item fields
+			// Format: primaryColor_secondaryColor_hoodieType (e.g., "CSM_NG_BE")
+			if line.CustomCode != nil && *line.CustomCode != "" {
+				customCodeParts := strings.Split(*line.CustomCode, "_")
+				if len(customCodeParts) == 3 {
+					primaryColorCode := customCodeParts[0]
+					secondaryColorCode := customCodeParts[1]
+					hoodieTypeCode := customCodeParts[2]
+					
+					// Override item fields with custom code values
+					item.ColorPrimary = primaryColorCode
+					item.ColorSecondary = secondaryColorCode
+					item.HoodieType = hoodieTypeCode
+					
+					log.Printf("🔧 GetSeparatedCarts: Mapped customCode=%s to colorPrimary=%s, colorSecondary=%s, hoodieType=%s", 
+						*line.CustomCode, primaryColorCode, secondaryColorCode, hoodieTypeCode)
+				} else {
+					log.Printf("⚠️ GetSeparatedCarts: Invalid customCode format: %s (expected format: primaryColor_secondaryColor_hoodieType)", *line.CustomCode)
+				}
+			}
+			
+			// Apply mappings for readable labels (will use custom values if customCode was present)
 			item.ColorPrimaryLabel = utils.MapCodeToColor(item.ColorPrimary)
 			item.ColorSecondaryLabel = utils.MapCodeToColor(item.ColorSecondary)
 			item.HoodieTypeLabel = utils.MapCodeToHoodieType(item.HoodieType)

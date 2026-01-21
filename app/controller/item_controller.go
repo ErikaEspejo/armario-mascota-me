@@ -127,6 +127,7 @@ func (c *ItemController) FilterItems(w http.ResponseWriter, r *http.Request) {
 	primaryColorRaw := queryParams.Get("primaryColor")
 	secondaryColorRaw := queryParams.Get("secondaryColor")
 	hoodieTypeRaw := queryParams.Get("hoodieType")
+	typeRaw := queryParams.Get("type")
 
 	// Build ItemFilterParams with mapped codes
 	var filters repository.ItemFilterParams
@@ -161,6 +162,17 @@ func (c *ItemController) FilterItems(w http.ResponseWriter, r *http.Request) {
 		hoodieTypeCode := utils.MapHoodieTypeToCode(hoodieTypeNormalized)
 		filters.HoodieType = &hoodieTypeCode
 		log.Printf("🔍 Filter: hoodieType=%s -> %s", hoodieTypeRaw, hoodieTypeCode)
+	}
+
+	// Map type
+	if typeRaw != "" {
+		typeNormalized := decodeAndNormalize(typeRaw)
+		if typeNormalized == "custom" {
+			statusMapped := "custom-ready"
+			filters.Status = &statusMapped
+			log.Printf("🔍 Filter: type=%s -> status=%s", typeRaw, statusMapped)
+		}
+		// If type is not "custom", don't set filters.Status (will default to "ready" in repository)
 	}
 
 	// Get filtered items from database

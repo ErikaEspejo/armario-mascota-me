@@ -85,7 +85,7 @@ func (r *ReservedOrderRepository) Create(ctx context.Context, req *models.Create
 }
 
 // AddItem adds an item to a reserved order with stock reservation
-func (r *ReservedOrderRepository) AddItem(ctx context.Context, orderID int64, itemID int64, qty int) (*models.ReservedOrderLine, error) {
+func (r *ReservedOrderRepository) AddItem(ctx context.Context, orderID int64, itemID int64, qty int, customCode *string) (*models.ReservedOrderLine, error) {
 	log.Printf("📦 AddItem: Adding item_id=%d, qty=%d to order_id=%d", itemID, qty, orderID)
 
 	if qty <= 0 {
@@ -163,23 +163,34 @@ func (r *ReservedOrderRepository) AddItem(ctx context.Context, orderID int64, it
 
 	// Upsert reserved_order_lines (if exists, add to qty; if not, create new)
 	// Use placeholder price (0) - pricing will be calculated dynamically
+	// Convert customCode *string to sql.NullString for database insertion
+	var customCodeDB sql.NullString
+	if customCode != nil {
+		customCodeDB = sql.NullString{String: *customCode, Valid: true}
+	}
+
 	queryUpsertLine := `
-		INSERT INTO reserved_order_lines (reserved_order_id, item_id, qty, unit_price)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO reserved_order_lines (reserved_order_id, item_id, qty, unit_price, custom_code)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (reserved_order_id, item_id)
 		DO UPDATE SET qty = reserved_order_lines.qty + EXCLUDED.qty
-		RETURNING id, reserved_order_id, item_id, qty, unit_price, created_at
+		RETURNING id, reserved_order_id, item_id, qty, unit_price, created_at, custom_code
 	`
 
 	var line models.ReservedOrderLine
-	err = tx.QueryRowContext(ctx, queryUpsertLine, orderID, itemID, qty, placeholderPrice).Scan(
+	var customCodeReturned sql.NullString
+	err = tx.QueryRowContext(ctx, queryUpsertLine, orderID, itemID, qty, placeholderPrice, customCodeDB).Scan(
 		&line.ID,
 		&line.ReservedOrderID,
 		&line.ItemID,
 		&line.Qty,
 		&line.UnitPrice,
 		&line.CreatedAt,
+		&customCodeReturned,
 	)
+	if err == nil && customCodeReturned.Valid {
+		line.CustomCode = &customCodeReturned.String
+	}
 	if err != nil {
 		log.Printf("❌ AddItem: Error upserting line: %v", err)
 		return nil, fmt.Errorf("failed to upsert order line: %w", err)
@@ -254,7 +265,7 @@ func (r *ReservedOrderRepository) GetByID(ctx context.Context, id int64) (*model
 
 	// Get lines with complete item and design asset information
 	queryLines := `
-		SELECT rol.id, rol.reserved_order_id, rol.item_id, rol.qty, rol.unit_price, rol.created_at,
+		SELECT rol.id, rol.reserved_order_id, rol.item_id, rol.qty, rol.unit_price, rol.created_at, rol.custom_code,
 		       i.id, i.sku, i.size, i.price, i.stock_total, i.stock_reserved, i.design_asset_id,
 		       COALESCE(da.description, '') as description,
 		       COALESCE(da.color_primary, '') as color_primary,
@@ -283,6 +294,7 @@ func (r *ReservedOrderRepository) GetByID(ctx context.Context, id int64) (*model
 	for rows.Next() {
 		var line models.ReservedOrderLineWithItem
 		var item models.ItemFullInfo
+		var customCode sql.NullString
 
 		err := rows.Scan(
 			&line.ID,
@@ -291,6 +303,7 @@ func (r *ReservedOrderRepository) GetByID(ctx context.Context, id int64) (*model
 			&line.Qty,
 			&line.UnitPrice,
 			&line.CreatedAt,
+			&customCode,
 			&item.ID,
 			&item.SKU,
 			&item.Size,
@@ -306,6 +319,9 @@ func (r *ReservedOrderRepository) GetByID(ctx context.Context, id int64) (*model
 			&item.DecoID,
 			&item.DecoBase,
 		)
+		if err == nil && customCode.Valid {
+			line.CustomCode = &customCode.String
+		}
 		if err != nil {
 			log.Printf("❌ GetByID: Error scanning line: %v", err)
 			continue
@@ -789,7 +805,7 @@ func (r *ReservedOrderRepository) GetAllWithFullItems(ctx context.Context, statu
 	for _, order := range orders {
 		// Get lines with complete item and design asset information
 		queryLines := `
-			SELECT rol.id, rol.reserved_order_id, rol.item_id, rol.qty, rol.unit_price, rol.created_at,
+			SELECT rol.id, rol.reserved_order_id, rol.item_id, rol.qty, rol.unit_price, rol.created_at, rol.custom_code,
 			       i.id, i.sku, i.size, i.price, i.stock_total, i.stock_reserved, i.design_asset_id,
 			       COALESCE(da.description, '') as description,
 			       COALESCE(da.color_primary, '') as color_primary,
@@ -817,6 +833,7 @@ func (r *ReservedOrderRepository) GetAllWithFullItems(ctx context.Context, statu
 		for lineRows.Next() {
 			var line models.ReservedOrderLineWithItem
 			var item models.ItemFullInfo
+			var customCode sql.NullString
 
 			err := lineRows.Scan(
 				&line.ID,
@@ -825,6 +842,7 @@ func (r *ReservedOrderRepository) GetAllWithFullItems(ctx context.Context, statu
 				&line.Qty,
 				&line.UnitPrice,
 				&line.CreatedAt,
+				&customCode,
 				&item.ID,
 				&item.SKU,
 				&item.Size,
@@ -840,6 +858,9 @@ func (r *ReservedOrderRepository) GetAllWithFullItems(ctx context.Context, statu
 				&item.DecoID,
 				&item.DecoBase,
 			)
+			if err == nil && customCode.Valid {
+				line.CustomCode = &customCode.String
+			}
 			if err != nil {
 				log.Printf("❌ GetAllWithFullItems: Error scanning line: %v", err)
 				continue
@@ -1061,12 +1082,21 @@ func (r *ReservedOrderRepository) UpdateItemQuantity(ctx context.Context, orderI
 
 	if qtyDiff == 0 {
 		log.Printf("⚠️  UpdateItemQuantity: No change in quantity, returning current line")
+		// Get custom_code if it exists
+		var customCode sql.NullString
+		queryCustomCode := `SELECT custom_code FROM reserved_order_lines WHERE reserved_order_id = $1 AND item_id = $2`
+		err = tx.QueryRowContext(ctx, queryCustomCode, orderID, itemID).Scan(&customCode)
+		var customCodePtr *string
+		if err == nil && customCode.Valid {
+			customCodePtr = &customCode.String
+		}
 		// Return current line without changes
 		return &models.ReservedOrderLine{
 			ReservedOrderID: orderID,
 			ItemID:          itemID,
 			Qty:             currentQty,
 			UnitPrice:       unitPrice,
+			CustomCode:      customCodePtr,
 		}, nil
 	}
 
@@ -1123,9 +1153,10 @@ func (r *ReservedOrderRepository) UpdateItemQuantity(ctx context.Context, orderI
 		UPDATE reserved_order_lines
 		SET qty = $1
 		WHERE reserved_order_id = $2 AND item_id = $3
-		RETURNING id, reserved_order_id, item_id, qty, unit_price, created_at
+		RETURNING id, reserved_order_id, item_id, qty, unit_price, created_at, custom_code
 	`
 	var line models.ReservedOrderLine
+	var customCode sql.NullString
 	err = tx.QueryRowContext(ctx, queryUpdateLine, newQty, orderID, itemID).Scan(
 		&line.ID,
 		&line.ReservedOrderID,
@@ -1133,7 +1164,11 @@ func (r *ReservedOrderRepository) UpdateItemQuantity(ctx context.Context, orderI
 		&line.Qty,
 		&line.UnitPrice,
 		&line.CreatedAt,
+		&customCode,
 	)
+	if err == nil && customCode.Valid {
+		line.CustomCode = &customCode.String
+	}
 	if err != nil {
 		log.Printf("❌ UpdateItemQuantity: Error updating line: %v", err)
 		return nil, fmt.Errorf("failed to update order line: %w", err)
@@ -1397,12 +1432,12 @@ func (r *ReservedOrderRepository) UpdateOrder(ctx context.Context, req *models.U
 			placeholderPrice := int64(0)
 			log.Printf("💰 UpdateOrder: Not calculating price here - will be calculated on-read. Using placeholder price: %d", placeholderPrice)
 
-			// Insert line
+			// Insert line (custom_code is NULL for UpdateOrder as it's not provided in the request)
 			queryInsertLine := `
-				INSERT INTO reserved_order_lines (reserved_order_id, item_id, qty, unit_price)
-				VALUES ($1, $2, $3, $4)
+				INSERT INTO reserved_order_lines (reserved_order_id, item_id, qty, unit_price, custom_code)
+				VALUES ($1, $2, $3, $4, $5)
 			`
-			_, err = tx.ExecContext(ctx, queryInsertLine, req.ID, itemID, reqLine.Qty, placeholderPrice)
+			_, err = tx.ExecContext(ctx, queryInsertLine, req.ID, itemID, reqLine.Qty, placeholderPrice, nil)
 			if err != nil {
 				log.Printf("❌ UpdateOrder: Error inserting line: %v", err)
 				return nil, fmt.Errorf("failed to insert line: %w", err)

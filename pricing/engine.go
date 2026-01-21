@@ -127,14 +127,21 @@ func GetEngine() *Engine {
 
 // getGroupForProductType determines which group a product type belongs to
 func (e *Engine) getGroupForProductType(productType string) string {
+	// Normalize CSM (custom) to BU (buso estándar) for promotions
+	normalizedType := productType
+	if productType == "CSM" {
+		normalizedType = "BU"
+		log.Printf("💰 getGroupForProductType: Normalized CSM to BU for promotions")
+	}
+	
 	for groupName, groupConfig := range e.config.Groups {
 		// Check if product type is in includeTypes
 		for _, includeType := range groupConfig.IncludeTypes {
-			if includeType == productType {
+			if includeType == normalizedType {
 				// Check if it's not excluded
 				isExcluded := false
 				for _, excludeType := range groupConfig.ExcludeTypes {
-					if excludeType == productType {
+					if excludeType == normalizedType {
 						isExcluded = true
 						break
 					}

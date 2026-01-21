@@ -18,6 +18,7 @@ type ItemFilterParams struct {
 	ColorPrimary   *string
 	ColorSecondary *string
 	HoodieType     *string
+	Status         *string
 }
 
 // ItemRepository handles database operations for items
@@ -112,10 +113,16 @@ func (r *ItemRepository) UpsertStock(ctx context.Context, designAssetID int, siz
 }
 
 // FilterItems retrieves items matching the provided filters
-// Always filters by items.is_active=true, design_assets.is_active=true, and design_assets.status='ready'
+// Filters by items.is_active=true, design_assets.is_active=true, and design_assets.status (defaults to 'ready' if not specified)
 func (r *ItemRepository) FilterItems(ctx context.Context, filters ItemFilterParams) ([]models.ItemCard, error) {
-	log.Printf("🔍 Filtering items with filters: size=%v, colorPrimary=%v, colorSecondary=%v, hoodieType=%v",
-		filters.Size, filters.ColorPrimary, filters.ColorSecondary, filters.HoodieType)
+	log.Printf("🔍 Filtering items with filters: size=%v, colorPrimary=%v, colorSecondary=%v, hoodieType=%v, status=%v",
+		filters.Size, filters.ColorPrimary, filters.ColorSecondary, filters.HoodieType, filters.Status)
+
+	// Determine status to filter by (default to 'ready' for backward compatibility)
+	statusFilter := "ready"
+	if filters.Status != nil && *filters.Status != "" {
+		statusFilter = *filters.Status
+	}
 
 	// Build base query with JOIN
 	baseQuery := `
@@ -125,13 +132,14 @@ func (r *ItemRepository) FilterItems(ctx context.Context, filters ItemFilterPara
 		INNER JOIN design_assets da ON i.design_asset_id = da.id
 		WHERE i.is_active = true 
 		  AND da.is_active = true 
-		  AND da.status = 'ready'
+		  AND da.status = $1
 	`
 
 	// Build WHERE conditions dynamically
 	var conditions []string
 	var args []interface{}
-	argIndex := 1
+	args = append(args, statusFilter)
+	argIndex := 2
 
 	if filters.Size != nil && *filters.Size != "" {
 		conditions = append(conditions, fmt.Sprintf("i.size = $%d", argIndex))
