@@ -17,11 +17,11 @@ import (
 
 // PricingConfig represents the pricing configuration structure
 type PricingConfig struct {
-	Currency    string                 `json:"currency"`
-	Groups      map[string]GroupConfig `json:"groups"`
-	SizeBuckets map[string]string      `json:"sizeBuckets"`
+	Currency    string                           `json:"currency"`
+	Groups      map[string]GroupConfig           `json:"groups"`
+	SizeBuckets map[string]string                `json:"sizeBuckets"`
 	Pricebook   map[string]map[string]PriceEntry `json:"pricebook"`
-	Rules       []Rule                 `json:"rules"`
+	Rules       []Rule                           `json:"rules"`
 }
 
 type GroupConfig struct {
@@ -125,6 +125,24 @@ func GetEngine() *Engine {
 	return engineInstance
 }
 
+// GetCatalogBusoPrices returns retail and wholesale prices for BUSOS for a given size.
+// It uses the configured sizeBuckets mapping (e.g., XS/S/M -> XS_S_M, MN/IT -> MINI_INTERMEDIO).
+func (e *Engine) GetCatalogBusoPrices(size string) (retail int64, wholesale int64, ok bool) {
+	if e == nil || e.config == nil {
+		return 0, 0, false
+	}
+	bucket := e.getSizeBucket(size)
+	pricebook, exists := e.config.Pricebook["BUSOS"]
+	if !exists {
+		return 0, 0, false
+	}
+	entry, exists := pricebook[bucket]
+	if !exists {
+		return 0, 0, false
+	}
+	return entry.Retail, entry.Wholesale, true
+}
+
 // getGroupForProductType determines which group a product type belongs to
 func (e *Engine) getGroupForProductType(productType string) string {
 	// Normalize CSM (custom) to BU (buso estándar) for promotions
@@ -133,7 +151,7 @@ func (e *Engine) getGroupForProductType(productType string) string {
 		normalizedType = "BU"
 		log.Printf("💰 getGroupForProductType: Normalized CSM to BU for promotions")
 	}
-	
+
 	for groupName, groupConfig := range e.config.Groups {
 		// Check if product type is in includeTypes
 		for _, includeType := range groupConfig.IncludeTypes {
@@ -262,7 +280,7 @@ func (e *Engine) getOrderLines(ctx context.Context, orderID int64) ([]OrderLineI
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("💰 getOrderLines: Line %d - ItemID=%d, Size=%s (normalized=%s), HoodieType=%s, Qty=%d", 
+		log.Printf("💰 getOrderLines: Line %d - ItemID=%d, Size=%s (normalized=%s), HoodieType=%s, Qty=%d",
 			line.LineID, line.ItemID, line.Size, utils.NormalizeSize(line.Size), line.HoodieType, line.Qty)
 		lines = append(lines, line)
 	}
@@ -336,14 +354,14 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 
 	// Group lines by group and size bucket for bundle processing
 	type LineKey struct {
-		Group     string
+		Group      string
 		SizeBucket string
-		LineID    int64
+		LineID     int64
 	}
 
 	// Process bundles first
 	bundleRules := e.getBundleRules()
-	
+
 	// Create a map to track remaining quantities after bundles
 	remainingQty := make(map[int64]int)
 	for _, line := range lines {
@@ -352,7 +370,7 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 
 	// Track bundle applications
 	bundleApplications := make(map[int64]int) // lineID -> qty in bundles
-	bundleRuleIDs := make(map[int64][]string)  // lineID -> rule IDs applied
+	bundleRuleIDs := make(map[int64][]string) // lineID -> rule IDs applied
 
 	// Apply bundle rules
 	for _, rule := range bundleRules {
@@ -376,14 +394,14 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 
 		// Find eligible lines
 		var eligibleLines []OrderLineInput
-		log.Printf("💰 Bundle rule %s: Checking rule - group=%s, sizes=%v, mixSizes=%v, requiredQty=%d", 
+		log.Printf("💰 Bundle rule %s: Checking rule - group=%s, sizes=%v, mixSizes=%v, requiredQty=%d",
 			rule.ID, group, sizes, mixSizes, int(requiredQty))
 		for _, line := range lines {
 			lineGroup := e.getGroupForProductType(line.HoodieType)
 			lineSizeBucket := e.getSizeBucket(line.Size)
 
 			if lineGroup != group {
-				log.Printf("💰 Bundle rule %s: Line %d skipped - group mismatch (lineGroup=%s, ruleGroup=%s)", 
+				log.Printf("💰 Bundle rule %s: Line %d skipped - group mismatch (lineGroup=%s, ruleGroup=%s)",
 					rule.ID, line.LineID, lineGroup, group)
 				continue
 			}
@@ -396,7 +414,7 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 						// For mixSizes, check if size bucket matches
 						if e.getSizeBucket(sizeStr) == lineSizeBucket {
 							sizeMatch = true
-							log.Printf("💰 Bundle rule %s: Line %d (size=%s, bucket=%s) matches rule size %s (bucket=%s) - mixSizes=true", 
+							log.Printf("💰 Bundle rule %s: Line %d (size=%s, bucket=%s) matches rule size %s (bucket=%s) - mixSizes=true",
 								rule.ID, line.LineID, line.Size, lineSizeBucket, sizeStr, e.getSizeBucket(sizeStr))
 							break
 						}
@@ -406,7 +424,7 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 						normalizedLineSize := utils.NormalizeSize(line.Size)
 						if normalizedRuleSize == normalizedLineSize {
 							sizeMatch = true
-							log.Printf("💰 Bundle rule %s: Line %d (size=%s normalized=%s) matches rule size %s (normalized=%s) - mixSizes=false", 
+							log.Printf("💰 Bundle rule %s: Line %d (size=%s normalized=%s) matches rule size %s (normalized=%s) - mixSizes=false",
 								rule.ID, line.LineID, line.Size, normalizedLineSize, sizeStr, normalizedRuleSize)
 							break
 						}
@@ -415,11 +433,11 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 			}
 
 			if sizeMatch && remainingQty[line.LineID] > 0 {
-				log.Printf("💰 Bundle rule %s: Line %d is eligible - size=%s, remainingQty=%d", 
+				log.Printf("💰 Bundle rule %s: Line %d is eligible - size=%s, remainingQty=%d",
 					rule.ID, line.LineID, line.Size, remainingQty[line.LineID])
 				eligibleLines = append(eligibleLines, line)
 			} else if sizeMatch {
-				log.Printf("💰 Bundle rule %s: Line %d matched size but has no remaining qty (remainingQty=%d)", 
+				log.Printf("💰 Bundle rule %s: Line %d matched size but has no remaining qty (remainingQty=%d)",
 					rule.ID, line.LineID, remainingQty[line.LineID])
 			}
 		}
@@ -442,12 +460,12 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 				totalEligibleQty += remainingQty[line.LineID]
 			}
 
-			log.Printf("💰 Bundle rule %s: Total eligible qty=%d, requiredQty=%d (mixSizes=false, can mix sizes within rule)", 
+			log.Printf("💰 Bundle rule %s: Total eligible qty=%d, requiredQty=%d (mixSizes=false, can mix sizes within rule)",
 				rule.ID, totalEligibleQty, int(requiredQty))
 
 			bundlesCount := totalEligibleQty / int(requiredQty)
 			if bundlesCount > 0 {
-				log.Printf("💰 Bundle rule %s: Applying %d bundles (mixSizes=false, totalQty=%d, requiredQty=%d)", 
+				log.Printf("💰 Bundle rule %s: Applying %d bundles (mixSizes=false, totalQty=%d, requiredQty=%d)",
 					rule.ID, bundlesCount, totalEligibleQty, int(requiredQty))
 				// Distribute bundle quantities deterministically across all eligible lines
 				qtyToDistribute := bundlesCount * int(requiredQty)
@@ -471,7 +489,7 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 						}
 						bundleRuleIDs[line.LineID] = append(bundleRuleIDs[line.LineID], rule.ID)
 						distributed += toTake
-						log.Printf("💰 Bundle rule %s: Applied %d units from line %d (size=%s) to bundle", 
+						log.Printf("💰 Bundle rule %s: Applied %d units from line %d (size=%s) to bundle",
 							rule.ID, toTake, line.LineID, line.Size)
 					}
 				}
@@ -485,7 +503,7 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 
 			bundlesCount := totalEligibleQty / int(requiredQty)
 			if bundlesCount > 0 {
-				log.Printf("💰 Bundle rule %s: Applying %d bundles (mixSizes=true, can mix sizes)", 
+				log.Printf("💰 Bundle rule %s: Applying %d bundles (mixSizes=true, can mix sizes)",
 					rule.ID, bundlesCount)
 				// Distribute bundle quantities deterministically
 				qtyToDistribute := bundlesCount * int(requiredQty)
@@ -596,7 +614,7 @@ func (e *Engine) calculateRetailWithBundles(lines []OrderLineInput, globalQtyEli
 						if requiredQty, ok := rule.Conditions["requiredQty"].(float64); ok {
 							// Bundle unit price = bundleTotalPrice / requiredQty
 							bundleUnitPrice = int64(bundleTotalPrice) / int64(requiredQty)
-							log.Printf("💰 Bundle unit price for line %d: %d (bundleTotal=%d, requiredQty=%d)", 
+							log.Printf("💰 Bundle unit price for line %d: %d (bundleTotal=%d, requiredQty=%d)",
 								line.LineID, bundleUnitPrice, int64(bundleTotalPrice), int64(requiredQty))
 							break
 						}
@@ -674,4 +692,3 @@ func (e *Engine) UpdateOrderType(ctx context.Context, orderID int64, orderType s
 	log.Printf("✅ UpdateOrderType: Updated order %d order_type to %s", orderID, orderType)
 	return nil
 }
-

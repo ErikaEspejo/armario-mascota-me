@@ -60,6 +60,32 @@
             page-break-after: auto;
         }
 
+        /* Intro page */
+        .intro-text {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            /* Positioned below the logo that is part of the intro image */
+            top: 75mm;
+            z-index: 2;
+            padding: 0 10mm;
+        }
+
+        .intro-size {
+            font-weight: 800;
+            font-size: 28pt;
+            color: #111;
+            margin-bottom: 6mm;
+        }
+
+        .intro-price {
+            font-weight: 600;
+            font-size: 24px;
+            color: #222;
+            margin-bottom: 2mm;
+        }
+
         .page-content {
             position: relative;
             z-index: 1;
@@ -169,6 +195,18 @@
     </style>
 </head>
 <body>
+    <!-- Intro page (always present) -->
+    <div class="page">
+        {{if .IntroURL}}
+        <img src="{{.IntroURL}}" alt="Intro" class="page-background">
+        {{end}}
+        <div class="intro-text">
+            <div class="intro-size">Talla : {{.Size}}</div>
+            <div class="intro-price">Precio detal: {{.RetailPrice}}</div>
+            <div class="intro-price">Precio por mayor: {{.WholesalePrice}}</div>
+        </div>
+    </div>
+
     {{range $page := .Pages}}
     <div class="page">
         {{if $.BackgroundURL}}

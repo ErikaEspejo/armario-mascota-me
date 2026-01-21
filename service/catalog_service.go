@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"armario-mascota-me/models"
+	"armario-mascota-me/pricing"
 	"armario-mascota-me/repository"
+	"armario-mascota-me/utils"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -189,7 +191,7 @@ func (s *CatalogService) RenderCatalogHTML(ctx context.Context, size string, ite
 
 	// Always use absolute URLs for logo and background
 	// Determine file extension
-	var logoExt, bgExt string
+	var logoExt, bgExt, introExt string
 	extensions := []string{".png", ".jpg", ".jpeg"}
 	for _, ext := range extensions {
 		if _, err := os.Stat(filepath.Join("static", "catalog", "logo"+ext)); err == nil {
@@ -203,9 +205,16 @@ func (s *CatalogService) RenderCatalogHTML(ctx context.Context, size string, ite
 			break
 		}
 	}
+	for _, ext := range extensions {
+		if _, err := os.Stat(filepath.Join("static", "catalog", "intro"+ext)); err == nil {
+			introExt = ext
+			break
+		}
+	}
 
 	logoURL := ""
 	backgroundURL := ""
+	introURL := ""
 
 	if logoExt != "" {
 		logoURL = fmt.Sprintf("%s/static/catalog/logo%s", s.baseURL, logoExt)
@@ -214,18 +223,37 @@ func (s *CatalogService) RenderCatalogHTML(ctx context.Context, size string, ite
 	if bgExt != "" {
 		backgroundURL = fmt.Sprintf("%s/static/catalog/background%s", s.baseURL, bgExt)
 	}
+	if introExt != "" {
+		introURL = fmt.Sprintf("%s/static/catalog/intro%s", s.baseURL, introExt)
+	}
+
+	// Pricing for intro page (BUSOS pricebook by size bucket)
+	retailPrice := ""
+	wholesalePrice := ""
+	if engine := pricing.GetEngine(); engine != nil {
+		if r, w, ok := engine.GetCatalogBusoPrices(size); ok {
+			retailPrice = utils.FormatCOP(r)
+			wholesalePrice = utils.FormatCOP(w)
+		}
+	}
 
 	// Prepare template data
 	templateData := struct {
-		Size          string
-		Pages         [][]models.CatalogItem
-		LogoURL       string
-		BackgroundURL string
+		Size           string
+		Pages          [][]models.CatalogItem
+		LogoURL        string
+		BackgroundURL  string
+		IntroURL       string
+		RetailPrice    string
+		WholesalePrice string
 	}{
-		Size:          size,
-		Pages:         pages,
-		LogoURL:       logoURL,
-		BackgroundURL: backgroundURL,
+		Size:           size,
+		Pages:          pages,
+		LogoURL:        logoURL,
+		BackgroundURL:  backgroundURL,
+		IntroURL:       introURL,
+		RetailPrice:    retailPrice,
+		WholesalePrice: wholesalePrice,
 	}
 
 	// Load template
@@ -261,7 +289,7 @@ func (s *CatalogService) GeneratePDF(ctx context.Context, size string) ([]byte, 
 		// Use detected Chrome path
 		opts := append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.ExecPath(chromePath),
-			chromedp.NoSandbox, // Required for running in Docker/containers
+			chromedp.NoSandbox,                          // Required for running in Docker/containers
 			chromedp.Flag("enable-print-preview", true), // Enable print preview
 		)
 		allocCtx, allocCancel = chromedp.NewExecAllocator(ctx, opts...)
@@ -467,11 +495,11 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 
 	// Double-check page count with a different method and get more info
 	var pageInfo struct {
-		Count   float64 `json:"count"`
-		HTML    string  `json:"html"`
-		BodyHTML string `json:"bodyHTML"`
+		Count    float64 `json:"count"`
+		HTML     string  `json:"html"`
+		BodyHTML string  `json:"bodyHTML"`
 	}
-		err = chromedp.Run(chromedpCtx,
+	err = chromedp.Run(chromedpCtx,
 		chromedp.Evaluate(`
 			(function() {
 				const pages = document.querySelectorAll('.page');

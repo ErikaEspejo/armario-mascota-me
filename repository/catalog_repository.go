@@ -151,4 +151,3 @@ func (r *CatalogRepository) GetItemsBySizeForCatalog(ctx context.Context, size s
 	log.Printf("✓ Successfully fetched %d items for catalog (size=%s)", len(items), normalizedSize)
 	return items, nil
 }
-
