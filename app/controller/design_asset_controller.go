@@ -509,6 +509,7 @@ func (c *DesignAssetController) FilterDesignAssets(w http.ResponseWriter, r *htt
 	hoodieTypeRaw := queryParams.Get("hoodieType")
 	imageTypeRaw := queryParams.Get("imageType")
 	decoBaseRaw := queryParams.Get("decoBase")
+	statusRaw := queryParams.Get("status")
 
 	// Build FilterParams with mapped codes
 	var filters repository.FilterParams
@@ -560,6 +561,13 @@ func (c *DesignAssetController) FilterDesignAssets(w http.ResponseWriter, r *htt
 		decoBaseUpper := strings.ToUpper(decoBaseMapped)
 		filters.DecoBase = &decoBaseUpper
 		log.Printf("🔍 Filter: decoBase=%s -> %s", decoBaseRaw, decoBaseUpper)
+	}
+
+	// Map status
+	if statusRaw != "" {
+		statusNormalized := decodeAndNormalize(statusRaw)
+		filters.Status = &statusNormalized
+		log.Printf("🔍 Filter: status=%s -> %s", statusRaw, statusNormalized)
 	}
 
 	// Get filtered design assets from database

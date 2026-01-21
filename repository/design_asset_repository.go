@@ -31,6 +31,7 @@ type FilterParams struct {
 	HoodieType     *string
 	ImageType      *string
 	DecoBase       *string
+	Status         *string
 }
 
 // ExistsByDriveFileID checks if a design asset exists by drive_file_id
@@ -388,10 +389,16 @@ func (r *DesignAssetRepository) UpdateFullDesignAsset(ctx context.Context, id in
 }
 
 // FilterDesignAssets retrieves design assets matching the provided filters
-// Always filters by status='ready' and is_active=true
+// Filters by status (defaults to 'ready' if not specified) and is_active=true
 func (r *DesignAssetRepository) FilterDesignAssets(ctx context.Context, filters FilterParams) ([]models.DesignAssetDetail, error) {
-	log.Printf("🔍 Filtering design assets with filters: colorPrimary=%v, colorSecondary=%v, hoodieType=%v, imageType=%v, decoBase=%v",
-		filters.ColorPrimary, filters.ColorSecondary, filters.HoodieType, filters.ImageType, filters.DecoBase)
+	log.Printf("🔍 Filtering design assets with filters: colorPrimary=%v, colorSecondary=%v, hoodieType=%v, imageType=%v, decoBase=%v, status=%v",
+		filters.ColorPrimary, filters.ColorSecondary, filters.HoodieType, filters.ImageType, filters.DecoBase, filters.Status)
+
+	// Determine status to filter by (default to 'ready' for backward compatibility)
+	statusFilter := "ready"
+	if filters.Status != nil && *filters.Status != "" {
+		statusFilter = *filters.Status
+	}
 
 	// Build base query
 	baseQuery := `
@@ -408,13 +415,14 @@ func (r *DesignAssetRepository) FilterDesignAssets(ctx context.Context, filters 
 		       is_active, 
 		       has_highlights
 		FROM design_assets
-		WHERE status = 'ready' AND is_active = true
+		WHERE status = $1 AND is_active = true
 	`
 
 	// Build WHERE conditions dynamically
 	var conditions []string
 	var args []interface{}
-	argIndex := 1
+	argIndex := 2 // Start at 2 since status is $1
+	args = append(args, statusFilter)
 
 	if filters.ColorPrimary != nil && *filters.ColorPrimary != "" {
 		conditions = append(conditions, fmt.Sprintf("color_primary = $%d", argIndex))
