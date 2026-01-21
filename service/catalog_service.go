@@ -390,7 +390,8 @@ func (s *CatalogService) GeneratePNG(ctx context.Context, size string) (map[int]
 	if err != nil {
 		expectedPages = 0
 	} else {
-		expectedPages = (len(items) + 8) / 9 // Ceiling division
+		// Ceiling division for product pages (9 items per page) + 1 intro page
+		expectedPages = (len(items)+8)/9 + 1
 	}
 
 	// PNG generation can be slower than PDF because we screenshot each page.
