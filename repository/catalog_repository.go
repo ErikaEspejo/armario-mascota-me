@@ -104,13 +104,28 @@ func (r *CatalogRepository) GetItemsBySizeForCatalog(ctx context.Context, size s
 			availableQty = 0
 		}
 
+		// Detect custom ("CSM") items
+		isCustom := strings.EqualFold(strings.TrimSpace(colorPrimary), "CSM") ||
+			strings.EqualFold(strings.TrimSpace(colorSecondary), "CSM") ||
+			strings.EqualFold(strings.TrimSpace(hoodieType), "CSM") ||
+			strings.EqualFold(strings.TrimSpace(decoID), "CSM")
+		item.IsCustom = isCustom
+
 		// Map color primary code to readable name and capitalize each word
-		colorPrimaryName := utils.MapCodeToColor(colorPrimary)
-		item.ColorPrimaryName = capitalizeWords(colorPrimaryName)
+		if isCustom {
+			item.ColorPrimaryName = "Tu eliges tu color"
+		} else {
+			colorPrimaryName := utils.MapCodeToColor(colorPrimary)
+			item.ColorPrimaryName = capitalizeWords(colorPrimaryName)
+		}
 
 		// Map hoodie type code to readable name and capitalize each word
-		hoodieTypeName := utils.MapCodeToHoodieType(hoodieType)
-		item.HoodieTypeName = capitalizeWords(hoodieTypeName)
+		if isCustom {
+			item.HoodieTypeName = ""
+		} else {
+			hoodieTypeName := utils.MapCodeToHoodieType(hoodieType)
+			item.HoodieTypeName = capitalizeWords(hoodieTypeName)
+		}
 
 		// Set SKU in uppercase
 		item.SKU = strings.ToUpper(sku)

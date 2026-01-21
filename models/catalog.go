@@ -14,6 +14,7 @@ type CatalogItem struct {
 	SKU             string `json:"sku"`            // SKU in uppercase
 	Code            string `json:"code"`            // Full code
 	AvailableQty    int    `json:"availableQty"`
+	IsCustom        bool   `json:"isCustom"`       // True when any component code is CSM (custom)
 }
 
 // CatalogData represents the data structure passed to the catalog template

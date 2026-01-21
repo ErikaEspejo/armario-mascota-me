@@ -194,13 +194,20 @@
                 {{end}}
                 <div class="product-info">
                     <div class="color">
-                        {{if $item.ColorPrimaryName}}
-                            {{$item.ColorPrimaryName}}
+                        {{if $item.IsCustom}}
+                            Tu eliges tu color
                         {{else}}
-                            -
+                            {{if $item.ColorPrimaryName}}
+                                {{$item.ColorPrimaryName}}
+                            {{else}}
+                                -
+                            {{end}}
                         {{end}}
                     </div>
+                    {{if $item.IsCustom}}
+                    {{else}}
                     <div class="type">{{$item.HoodieTypeName}}</div>
+                    {{end}}
                     <div class="design-id">{{$item.SKU}}</div>
                     <div class="quantity">
                         <span class="quantity-label">Disponibles: </span>{{$item.AvailableQty}}
