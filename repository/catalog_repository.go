@@ -62,7 +62,7 @@ func (r *CatalogRepository) GetItemsBySizeForCatalog(ctx context.Context, size s
 		WHERE i.size = $1 
 		  AND i.is_active = true
 		  AND da.is_active = true
-		  AND da.status = 'ready'
+		  AND da.status IN ('ready', 'custom-ready')
 		  AND (i.stock_total - i.stock_reserved) > 0
 		ORDER BY da.code ASC
 	`
