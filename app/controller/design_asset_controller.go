@@ -176,6 +176,21 @@ func (c *DesignAssetController) UpdateDesignAsset(w http.ResponseWriter, r *http
 	})
 }
 
+// buildPendingResponse is a helper method that builds the response with optimized image URLs
+// This method contains the common logic used by GetPendingDesignAssets and GetCustomPendingDesignAssets
+func (c *DesignAssetController) buildPendingResponse(assets []models.DesignAssetDetail) []models.DesignAssetDetailWithOptimizedURL {
+	response := make([]models.DesignAssetDetailWithOptimizedURL, len(assets))
+	for i, asset := range assets {
+		// Construct URL to optimized image endpoint
+		optimizedURL := fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", asset.ID)
+		response[i] = models.DesignAssetDetailWithOptimizedURL{
+			DesignAssetDetail: asset,
+			OptimizedImageUrl: optimizedURL,
+		}
+	}
+	return response
+}
+
 // GetPendingDesignAssets handles GET /admin/design-assets/pending
 // Returns all design assets with status = 'pending' (metadata only, no image processing)
 func (c *DesignAssetController) GetPendingDesignAssets(w http.ResponseWriter, r *http.Request) {
@@ -194,15 +209,35 @@ func (c *DesignAssetController) GetPendingDesignAssets(w http.ResponseWriter, r 
 	}
 
 	// Build response with optimized image URLs (lazy processing - URLs only, no actual processing)
-	response := make([]models.DesignAssetDetailWithOptimizedURL, len(assets))
-	for i, asset := range assets {
-		// Construct URL to optimized image endpoint
-		optimizedURL := fmt.Sprintf("/admin/design-assets/pending/%d/image?size=thumb", asset.ID)
-		response[i] = models.DesignAssetDetailWithOptimizedURL{
-			DesignAssetDetail: asset,
-			OptimizedImageUrl: optimizedURL,
-		}
+	response := c.buildPendingResponse(assets)
+
+	// Set content type and return JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
+}
+
+// GetCustomPendingDesignAssets handles GET /admin/design-assets/custom-pending
+// Returns all design assets with status = 'custom-pending' (metadata only, no image processing)
+func (c *DesignAssetController) GetCustomPendingDesignAssets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := context.Background()
+
+	// Get custom-pending design assets from database
+	assets, err := c.repository.GetCustomPending(ctx)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get custom-pending design assets: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Build response with optimized image URLs (lazy processing - URLs only, no actual processing)
+	response := c.buildPendingResponse(assets)
 
 	// Set content type and return JSON
 	w.Header().Set("Content-Type", "application/json")

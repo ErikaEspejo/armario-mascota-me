@@ -83,6 +83,9 @@ func SetupRoutes(controllers *Controllers) {
 	// Get pending design assets
 	http.HandleFunc("/admin/design-assets/pending", controllers.DesignAsset.GetPendingDesignAssets)
 
+	// Get custom-pending design assets
+	http.HandleFunc("/admin/design-assets/custom-pending", controllers.DesignAsset.GetCustomPendingDesignAssets)
+
 	// Update full design asset
 	http.HandleFunc("/admin/design-assets/update", controllers.DesignAsset.UpdateFullDesignAsset)
 
@@ -115,7 +118,7 @@ func SetupRoutes(controllers *Controllers) {
 	// Items routes
 	// Add stock to item
 	http.HandleFunc("/admin/items/stock", controllers.Item.AddStock)
-	
+
 	// Filter items
 	http.HandleFunc("/admin/items/filter", controllers.Item.FilterItems)
 
@@ -145,7 +148,7 @@ func SetupRoutes(controllers *Controllers) {
 	// Reserved order actions (must be before the generic /:id route)
 	http.HandleFunc("/admin/reserved-orders/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/admin/reserved-orders/")
-		
+
 		// Route to specific actions first
 		if strings.HasSuffix(path, "/cancel") {
 			controllers.ReservedOrder.CancelOrder(w, r)
@@ -174,19 +177,19 @@ func SetupRoutes(controllers *Controllers) {
 			controllers.ReservedOrder.AddItem(w, r)
 			return
 		}
-		
+
 		// Handle PUT /admin/reserved-orders/:id (update entire order)
 		if r.Method == http.MethodPut && !strings.Contains(path, "/") {
 			controllers.ReservedOrder.UpdateOrder(w, r)
 			return
 		}
-		
+
 		// Otherwise, treat as GET /admin/reserved-orders/:id
 		if r.Method == http.MethodGet {
 			controllers.ReservedOrder.GetOrder(w, r)
 			return
 		}
-		
+
 		// Method not allowed
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})

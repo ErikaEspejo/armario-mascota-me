@@ -214,9 +214,10 @@ func (r *DesignAssetRepository) UpdateDescriptionAndHighlights(ctx context.Conte
 	return nil
 }
 
-// GetPending retrieves all design assets with status = 'pending' (limited to 10 rows)
-func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.DesignAssetDetail, error) {
-	log.Printf("🔍 Fetching design assets with status = 'pending' (limit: 10)")
+// getByStatus is a generic helper method that retrieves design assets by status
+// This method contains the common SQL query logic used by GetPending and GetCustomPending
+func (r *DesignAssetRepository) getByStatus(ctx context.Context, status string, limit int) ([]models.DesignAssetDetail, error) {
+	log.Printf("🔍 Fetching design assets with status = '%s' (limit: %d)", status, limit)
 
 	query := `
 		SELECT id, code, 
@@ -232,15 +233,15 @@ func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.Design
 		       is_active, 
 		       has_highlights
 		FROM design_assets
-		WHERE status = 'pending'
+		WHERE status = $1
 		ORDER BY created_at ASC
-		LIMIT 10
+		LIMIT $2
 	`
 
-	rows, err := db.DB.QueryContext(ctx, query)
+	rows, err := db.DB.QueryContext(ctx, query, status, limit)
 	if err != nil {
-		log.Printf("❌ Error fetching pending design assets: %v", err)
-		return nil, fmt.Errorf("failed to get pending design assets: %w", err)
+		log.Printf("❌ Error fetching design assets with status '%s': %v", status, err)
+		return nil, fmt.Errorf("failed to get design assets with status '%s': %w", status, err)
 	}
 	defer rows.Close()
 
@@ -263,19 +264,29 @@ func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.Design
 			&asset.HasHighlights,
 		)
 		if err != nil {
-			log.Printf("❌ Error scanning pending design asset: %v", err)
+			log.Printf("❌ Error scanning design asset with status '%s': %v", status, err)
 			continue
 		}
 		assets = append(assets, asset)
 	}
 
 	if err := rows.Err(); err != nil {
-		log.Printf("❌ Error iterating pending design assets: %v", err)
-		return nil, fmt.Errorf("failed to iterate pending design assets: %w", err)
+		log.Printf("❌ Error iterating design assets with status '%s': %v", status, err)
+		return nil, fmt.Errorf("failed to iterate design assets with status '%s': %w", status, err)
 	}
 
-	log.Printf("✓ Successfully fetched %d pending design assets", len(assets))
+	log.Printf("✓ Successfully fetched %d design assets with status '%s'", len(assets), status)
 	return assets, nil
+}
+
+// GetPending retrieves all design assets with status = 'pending' (limited to 10 rows)
+func (r *DesignAssetRepository) GetPending(ctx context.Context) ([]models.DesignAssetDetail, error) {
+	return r.getByStatus(ctx, "pending", 10)
+}
+
+// GetCustomPending retrieves all design assets with status = 'custom-pending' (limited to 10 rows)
+func (r *DesignAssetRepository) GetCustomPending(ctx context.Context) ([]models.DesignAssetDetail, error) {
+	return r.getByStatus(ctx, "custom-pending", 10)
 }
 
 // GetByID retrieves a design asset by its ID
