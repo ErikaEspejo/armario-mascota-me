@@ -35,6 +35,7 @@ func NewDesignAssetController(syncService service.SyncServiceInterface, repo rep
 
 // LoadImages handles GET /admin/design-assets/load
 // This endpoint fetches images from Google Drive, syncs them to the database, and returns them
+// Query param: type=customizable to use customizable folder and custom-pending status
 func (c *DesignAssetController) LoadImages(w http.ResponseWriter, r *http.Request) {
 	// Only allow GET method
 	if r.Method != http.MethodGet {
@@ -42,16 +43,34 @@ func (c *DesignAssetController) LoadImages(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get folder ID from environment variable
-	folderID := os.Getenv("GOOGLE_DRIVE_FOLDER_ID")
-	if folderID == "" {
-		http.Error(w, "GOOGLE_DRIVE_FOLDER_ID environment variable is not set", http.StatusInternalServerError)
-		return
+	// Check if type=customizable query param is present
+	typeParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type")))
+	isCustomizable := typeParam == "customizable"
+
+	var folderID string
+	var status string
+
+	if isCustomizable {
+		// Use customizable folder ID and custom-pending status
+		folderID = os.Getenv("GOOGLE_DRIVE_CUSTOMIZABLE_FOLDER_ID")
+		if folderID == "" {
+			http.Error(w, "GOOGLE_DRIVE_CUSTOMIZABLE_FOLDER_ID environment variable is not set", http.StatusInternalServerError)
+			return
+		}
+		status = "custom-pending"
+	} else {
+		// Use default folder ID and pending status
+		folderID = os.Getenv("GOOGLE_DRIVE_FOLDER_ID")
+		if folderID == "" {
+			http.Error(w, "GOOGLE_DRIVE_FOLDER_ID environment variable is not set", http.StatusInternalServerError)
+			return
+		}
+		status = "pending"
 	}
 
 	// Execute synchronization (fetches from Drive and syncs to DB)
 	ctx := context.Background()
-	designAssets, inserted, skipped, total, err := c.syncService.SyncDesignAssetsWithStats(ctx, folderID)
+	designAssets, inserted, skipped, total, err := c.syncService.SyncDesignAssetsWithStats(ctx, folderID, status)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load and sync design assets: %v", err), http.StatusInternalServerError)
 		return

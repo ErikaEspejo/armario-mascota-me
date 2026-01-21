@@ -71,7 +71,8 @@ func (r *DesignAssetRepository) GetMaxDecoID(ctx context.Context) (int, error) {
 
 // Insert inserts a new design asset into the database
 // Only inserts drive_file_id, image_url, and deco_id (ascending number), other fields will be set from the frontend
-func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.DesignAssetDB) error {
+// If status is empty, defaults to "pending" for backward compatibility
+func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.DesignAssetDB, status string) error {
 	log.Printf("💾 Repository.Insert called for drive_file_id: %s", asset.DriveFileID)
 
 	// Get the next deco_id (max + 1)
@@ -100,15 +101,17 @@ func (r *DesignAssetRepository) Insert(ctx context.Context, asset *models.Design
 	// Use current time for created_at
 	createdAt := time.Now()
 
-	// Status is always 'pending' when loading images
-	status := "pending"
+	// Default to "pending" if status is empty (backward compatibility)
+	if status == "" {
+		status = "pending"
+	}
 
 	result, err := db.DB.ExecContext(ctx, query,
 		code, // Use drive_file_id as code
 		asset.DriveFileID,
 		asset.ImageURL,
 		nextDecoIDStr, // Convert to string since deco_id is text in database
-		status,        // Always 'pending' when loading images
+		status,        // Use provided status or default to "pending"
 		createdAt,
 		true, // is_active defaults to true
 	)
