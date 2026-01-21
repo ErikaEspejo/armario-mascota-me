@@ -390,11 +390,24 @@ func (c *DesignAssetController) UpdateFullDesignAsset(w http.ResponseWriter, r *
 	log.Printf("🔤 UpdateFullDesignAsset: Normalized values - Description: %s, ColorPrimary: %s, ColorSecondary: %s, HoodieType: %s, ImageType: %s, DecoBase: %s",
 		description, colorPrimary, colorSecondary, hoodieType, imageType, decoBase)
 
+	// Determine status based on colorPrimary
+	status := "ready"
+	if colorPrimary == "custom" {
+		status = "custom-ready"
+	}
+
 	// Map values using utility functions (returns uppercase codes)
 	colorPrimaryCode := utils.MapColorToCode(colorPrimary)
 	colorSecondaryCode := utils.MapColorToCode(colorSecondary)
 	hoodieTypeCode := utils.MapHoodieTypeToCode(hoodieType)
-	imageTypeCode := utils.ParseImageTypeSizes(imageType)
+
+	// Handle imageType: if it's "custom", set directly to "CSM", otherwise use ParseImageTypeSizes
+	var imageTypeCode string
+	if imageType == "custom" {
+		imageTypeCode = "CSM"
+	} else {
+		imageTypeCode = utils.ParseImageTypeSizes(imageType)
+	}
 
 	// Map decoBase values: N/A -> 0, Círculo -> C, Nube -> N
 	decoBaseMapped := decoBase
@@ -406,6 +419,20 @@ func (c *DesignAssetController) UpdateFullDesignAsset(w http.ResponseWriter, r *
 		decoBaseMapped = "N"
 	}
 	decoBaseUpper := strings.ToUpper(decoBaseMapped)
+
+	// Replace "CUSTOM" with "CSM" in all mapped codes
+	if colorPrimaryCode == "CUSTOM" {
+		colorPrimaryCode = "CSM"
+	}
+	if colorSecondaryCode == "CUSTOM" {
+		colorSecondaryCode = "CSM"
+	}
+	if hoodieTypeCode == "CUSTOM" {
+		hoodieTypeCode = "CSM"
+	}
+	if decoBaseUpper == "CUSTOM" {
+		decoBaseUpper = "CSM"
+	}
 
 	log.Printf("🗺️  UpdateFullDesignAsset: Mapped codes - ColorPrimary: %s -> %s, ColorSecondary: %s -> %s, HoodieType: %s -> %s, ImageType: %s -> %s, DecoBase: %s -> %s",
 		colorPrimary, colorPrimaryCode, colorSecondary, colorSecondaryCode, hoodieType, hoodieTypeCode, imageType, imageTypeCode, decoBase, decoBaseUpper)
@@ -426,12 +453,12 @@ func (c *DesignAssetController) UpdateFullDesignAsset(w http.ResponseWriter, r *
 	imageTypeUpper := imageTypeCode
 	decoBaseUpperDB := decoBaseUpper
 
-	log.Printf("💾 UpdateFullDesignAsset: Preparing to update database - ID: %d, Code: %s, DecoID: %s, Status: ready", id, code, decoID)
+	log.Printf("💾 UpdateFullDesignAsset: Preparing to update database - ID: %d, Code: %s, DecoID: %s, Status: %s", id, code, decoID, status)
 
 	ctx := context.Background()
 
-	// Update design asset with status="ready"
-	if err := c.repository.UpdateFullDesignAsset(ctx, id, code, descriptionUpper, colorPrimaryUpper, colorSecondaryUpper, hoodieTypeUpper, imageTypeUpper, decoID, decoBaseUpperDB, updateReq.HasHighlights, "ready"); err != nil {
+	// Update design asset with determined status
+	if err := c.repository.UpdateFullDesignAsset(ctx, id, code, descriptionUpper, colorPrimaryUpper, colorSecondaryUpper, hoodieTypeUpper, imageTypeUpper, decoID, decoBaseUpperDB, updateReq.HasHighlights, status); err != nil {
 		log.Printf("❌ UpdateFullDesignAsset: Error updating full design asset: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to update design asset: %v", err), http.StatusInternalServerError)
 		return
